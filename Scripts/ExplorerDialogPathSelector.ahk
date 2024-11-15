@@ -515,7 +515,7 @@ DisplayDialogPathMenu(thisHotkey) { ; Called via the Hotkey function, so it must
         ; Add separator if we had Directory Opus paths
         if (hasItems)
             InsertMenuItem(CurrentLocations, "", unset, unset, unset, unset) ; Separator
-        
+
         windowNum := 1
         for hwnd, windowPaths in windows {
             InsertMenuItem(CurrentLocations, "Explorer Window " windowNum, unset, unset, unset, unset) ; Header
