@@ -1834,7 +1834,7 @@ ShowPathSelectorHelpWindow(*) {
     ; Display info about UI Access depending on the mode the script is running in
     elevatedTipText := ""
     if A_IsCompiled {
-        elevatedTipText := "• To make this proram work with dialogs launched by elevated processes without having to run it as admin, place the executable in a trusted location such as `"C:\Program Files\...`""
+        elevatedTipText := "• To make this program work with dialogs launched by elevated processes without having to run it as admin, place the executable in a trusted location such as `"C:\Program Files\...`""
         elevatedTipText .= "  (You do NOT need to run this exe itself as Admin for this to work.)"
     } else if !ThisScriptRunningStandalone() {
         elevatedTipText := "• To make this work with dialogs launched by elevated processes, enable UI Access via the parent script."
