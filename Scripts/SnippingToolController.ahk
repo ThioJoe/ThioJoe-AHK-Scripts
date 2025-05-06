@@ -17,7 +17,7 @@
 ;       Optional: You can also use the SetSnippingToolMode() function directly if you want to set a specific mode without launching the tool, like if you know it's already open.
 
 ; EXAMPLE USAGE:  "Ctrl + PrintScreen"  to go directly to text extractor mode. You can even uncomment this exact line to use it if you want. Or call the same function from your main script.
-;   ^PrintScreen:: ActivateSnippingToolAction(Actions.TextExtractor)
+;   ^PrintScreen:: ActivateSnippingToolAction(Actions.Rectangle, true) ; This will launch the Snipping Tool in Freeform mode and automatically click the toast notification if it appears.
 
 ; Optional Parameters:
 ;    Parameter Position 2:  autoClickToast: If set to true, it will automatically click the toast notification that appears after taking a screenshot (within 15 seconds).
@@ -130,6 +130,7 @@ ActivateSnippingToolAction(elementEnum, autoClickToast := false) {
 
     if (autoClickToast && elementEnum != Actions.Close && elementEnum != Actions.TextExtractor && elementEnum != Actions.Video) {
         ; Check for the toast notification and click it
+        global haveClickedToast := false ; Reset the flag
         CallFunctionWithTimeout(CheckAndClickToast, 350, 15) ; Check every 350ms for 15 seconds
     }
 }
@@ -306,11 +307,18 @@ Launch_UWP_With_Args(appUserModelId, activationContext, options := 0) {
 ; Loop that checks for the presence of a toast notification ahk_exe ShellExperienceHost.exe, title of New notification
 toastString := "New notification ahk_exe ShellExperienceHost.exe"
 isToastClickTimerRunning := false
+haveClickedToast := false
 
 CheckAndClickToast() {
     local existResult := WinExist("ahk_exe ShellExperienceHost.exe")
     local MainElement := 0
     local button := 0
+
+    ; Check if the toast has already been clicked
+    if (haveClickedToast) {
+        OutputDebug("`nToast already clicked. Exiting.")
+        return
+    }
 
     if (existResult)
     {
@@ -325,12 +333,21 @@ CheckAndClickToast() {
 
                 if (isObject(button) && button.Name == "Markup and share")
                 {
-                    Sleep(250) ; Wait for the button to be ready
+                    Sleep(250) ; Wait for the button to be ready. Even when not automating, the button is not clickable immediately.
                     button.Click()
-                    CancelToastCheckTimer() ; Cancel the timer
-                    WaitAndActivateSnipWindow() ; Wait for the snipping tool window to exist and activate it
-                    OutputDebug("`nToast found and clicked.")
-                    return true
+                    global haveClickedToast := true ; Set the flag to true to prevent clicking again unless the click fails
+                    
+                    local activateResult := WaitAndActivateSnipWindow() ; Wait for the snipping tool window to exist and activate it
+                    if (activateResult) {
+                        CancelToastCheckTimer() ; Cancel the timer
+                        OutputDebug("`nToast found and clicked.")
+                        return true
+                    } else {
+                        ; If it timed out
+                        OutputDebug("`nFailed to activate Snipping Tool Overlay after clicking toast.")
+                        global haveClickedToast := false ; Reset the flag to allow for another click
+                        return false
+                    }
                 } 
             }
         } catch as e {
@@ -344,14 +361,22 @@ CheckAndClickToast() {
 
 ; Wait for the snipping tool window to exist and activate it and bring to front
 WaitAndActivateSnipWindow() {
-    local snipWindow := WinWait("Snipping Tool", unset, 2) ; Add a small timeout
+    local snipWindow := WinWait("Snipping Tool", unset, 3) ; Waits for the window to exist, with a timeout
     if (snipWindow) {
         WinActivate(snipWindow)
-        WinWaitActive(snipWindow)
-        OutputDebug("`nSnipping Tool Overlay activated.")
+        WinWaitActive(snipWindow, unset, 0.5) ; Wait for the window to be active. Should be instant but just in case
+        if (WinActive("Snipping Tool")) {
+            OutputDebug("`nSnipping Tool Overlay activated.")
+            return true
+        } else {
+            OutputDebug("`nSnipping Tool Overlay did not become active.")
+            return false
+        }
     } else {
         OutputDebug("`nSnipping Tool Overlay not found.")
     }
+
+    return false
 }
 
 CancelToastCheckTimer() {
