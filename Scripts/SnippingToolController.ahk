@@ -18,6 +18,9 @@
 
 ; EXAMPLE USAGE:  "Ctrl + PrintScreen"  to go directly to text extractor mode. You can even uncomment this exact line to use it if you want. Or call the same function from your main script.
 ;   ^PrintScreen:: ActivateSnippingToolAction(Actions.TextExtractor)
+
+; Optional Parameters:
+;    Parameter Position 2:  autoClickToast: If set to true, it will automatically click the toast notification that appears after taking a screenshot (within 15 seconds).
 ; ============================================================================================================
 
 ; ------ Available options for Actions (Do Not Change - For Reference Only)  ------
@@ -66,18 +69,27 @@ freeformModeElement      := SnipToolbarUIA("Freeform"                    , "X37/
 
 
 CheckIfVideoMode() {
-    local SnipToolOverlay := UIA.ElementFromHandle(snipToolString)
-    local Condition := UIA.CreateCondition("AutomationId", modeDropdownElement.AutomationId)
-    local dropdown := SnipToolOverlay.FindFirst(Condition, UIA.TreeScope.Descendants)
+    try {
+        local SnipToolOverlay := UIA.ElementFromHandle(snipToolString)
+        local Condition := UIA.CreateCondition("AutomationId", modeDropdownElement.AutomationId)
+        ; local dropdown := snipToolOverlay.WaitElement(Condition, UIA.TreeScope.Descendants, 1000) ; Wait for the element to be present
+        Sleep(50)
+        local dropdown := SnipToolOverlay.FindFirst(Condition, UIA.TreeScope.Subtree)
 
-    ; If the dropdown is not enabled, it means we're in video mode
-    if (!dropdown.GetPropertyValue("IsEnabled")) {
-        return true ; Not in video mode
+        ; If the dropdown is not enabled, it means we're in video mode
+        if (IsObject(dropdown) && !dropdown.GetPropertyValue("IsEnabled")) {
+            return true
+        } else {
+            return false
+        }
+    } catch as e {
+        OutputDebug("`nError checking video mode: " e.Message "`nAt line: " e.Line)
+        return false
     }
 }
 
 
-ActivateSnippingToolAction(elementEnum) {
+ActivateSnippingToolAction(elementEnum, autoClickToast := false) {
     try {
         Launch_UWP_With_Args("Microsoft.ScreenSketch_8wekyb3d8bbwe!App", "new-snip")
     } catch Error as e {
@@ -94,6 +106,11 @@ ActivateSnippingToolAction(elementEnum) {
 
     ; Once the snipping tool is active, we can proceed to set or invoke the desired action
     SetSnippingToolMode(elementEnum)
+
+    if (autoClickToast && elementEnum != Actions.Close && elementEnum != Actions.TextExtractor && elementEnum != Actions.Video) {
+        ; Check for the toast notification and click it
+        CallFunctionWithTimeout(CheckAndClickToast, 350, 15) ; Check every 350ms for 15 seconds
+    }
 }
 
 
@@ -162,24 +179,37 @@ InvokeElement(element, initialElementString) {
             OutputDebug("`nAttempting to find element using AutomationId: " element.AutomationId)
             Condition := UIA.CreateCondition("AutomationId", element.AutomationId)
         } else {
+            Sleep(10) ; These need some time to load apparently
             OutputDebug("`nAttempting to find element using Name: " element.Name)
             Condition := UIA.CreateCondition("Name", element.Name)
         }
 
-        button := MainElement.FindFirst(Condition, UIA.TreeScope.Descendants)
+        try { 
+            button := MainElement.FindFirst(Condition, UIA.TreeScope.Subtree) 
+        } catch as e {
+            Sleep(50) ; Give it a little time to load and try again
+            try {
+                button := MainElement.FindFirst(Condition, UIA.TreeScope.Subtree)
+            }
+        }
 
         if IsObject(button) {
             OutputDebug("`n" element.Name " found through AutomationId.")
         } else {
             ; Fall back to find the button using the path
-            button := MainElement.ElementFromPath(element.Path)
+            try {
+                button := MainElement.ElementFromPath(element.Path)
+            }
+            
             if IsObject(button) {
                 OutputDebug("`n" element.Name " found through path.")
             }
         }
 
         if IsObject(button) {
-            button.Click() ; This will automatically try to use the proper method (Invoke, Toggle, etc.). It does not move the mouse to work.
+            try {
+                button.Click() ; This will automatically try to use the proper method (Invoke, Toggle, etc.). It does not move the mouse to work.
+            }
             OutputDebug("`n`"" element.Name "`" invoked successfully.")
             return true
         } else {
@@ -232,4 +262,83 @@ Launch_UWP_With_Args(appUserModelId, activationContext, options := 0) {
         throw(Error("Error during UWP activation: " . e.Message))
     }
     ; 'manager' (ComValue) is automatically released when it goes out of scope.
+}
+
+
+; Loop that checks for the presence of a toast notification ahk_exe ShellExperienceHost.exe, title of New notification
+toastString := "New notification ahk_exe ShellExperienceHost.exe"
+isToastClickTimerRunning := false
+
+CheckAndClickToast() {
+    local existResult := WinExist("ahk_exe ShellExperienceHost.exe")
+    local MainElement := 0
+    local button := 0
+
+    if (existResult)
+    {
+        try {
+            MainElement := UIA.ElementFromHandle(toastString)
+            if (isObject(MainElement))
+            {
+                Condition := UIA.CreateCondition("AutomationId", "VerbButton")
+                try {
+                    button := MainElement.FindFirst(Condition, UIA.TreeScope.Subtree)
+                }
+
+                if (isObject(button))
+                {
+                    Sleep(250) ; Wait for the button to be ready
+                    button.Click()
+                    CancelToastCheckTimer() ; Cancel the timer
+                    WaitAndActivateSnipWindow() ; Wait for the snipping tool window to exist and activate it
+                    OutputDebug("`nToast found and clicked.")
+                    return true
+                } 
+            }
+        } catch as e {
+            OutputDebug("`nError checking for toast: " e.Message "`nAt line: " e.Line)
+        }
+    }
+    ; OutputDebug("`nToast not found or button not clickable.")
+    ; Return false unless we find the button
+    return false
+}
+
+; Wait for the snipping tool window to exist and activate it and bring to front
+WaitAndActivateSnipWindow() {
+    local snipWindow := WinWait("Snipping Tool", unset, 2) ; Add a small timeout
+    if (snipWindow) {
+        WinActivate(snipWindow)
+        WinWaitActive(snipWindow)
+        OutputDebug("`nSnipping Tool Overlay activated.")
+    } else {
+        OutputDebug("`nSnipping Tool Overlay not found.")
+    }
+}
+
+CancelToastCheckTimer() {
+    ; Cancels the timer
+    SetTimer(CheckAndClickToast, 0)
+    global isToastClickTimerRunning := false
+    OutputDebug("`nTimer cancelled.")
+}
+
+
+CallFunctionWithTimeout(FuncToCall, IntervalMs, TimeoutSeconds) {
+    local startTime := A_TickCount
+    local endTime := startTime + (TimeoutSeconds * 1000)
+
+    if (isToastClickTimerRunning) {
+        ; OutputDebug("`nTimer already running. Exiting.")
+        return
+    } else {
+        global isToastClickTimerRunning := true
+    }
+
+    ; Use SetTimer to call the function at intervals but stop after the timeout or if it returns true
+    SetTimer(FuncToCall, IntervalMs)
+
+    ; Cancel the timer after the timeout. Using negative makes it run once after the timeout
+    SetTimer(CancelToastCheckTimer, (TimeoutSeconds * -1000)) 
+
 }
