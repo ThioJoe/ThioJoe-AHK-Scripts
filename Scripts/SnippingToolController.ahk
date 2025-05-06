@@ -4,7 +4,7 @@
 ; Purpose: This script allows you to launch Snipping Tool directly to specific modes.
 ; Author:  ThioJoe
 ; Repo:    https://github.com/ThioJoe/ThioJoe-AHK-Scripts
-; Version: 1.1.0
+; Version: 1.1.1
 ; -----------------------------------------------
 ;
 ; REQUIRED: Set the path to the required UIA.ahk class file. Here it is up one directory then in the Lib folder. If it's in the same folder it would be:  #Include "UIA.ahk"
@@ -41,20 +41,22 @@ class Actions {
 
 ; Create a new template class that will store names, UIA paths, AutomationIDs, etc.
 class SnipToolbarUIA {
-    __New(name, path, automationId, type, parent := 0) {
+    __New(name, path, automationId, type, parent := 0, parentRootString := "") {
         this.Name := name
         this.Path := path
         this.AutomationId := automationId
         this.Type := type
         this.ParentElement := parent
+        this.ParentRootString := parentRootString
     }
 }
 
 ; Parent Elements
 snipToolString := "Snipping Tool Overlay ahk_exe SnippingTool.exe"
-snippingOverlayElement   := SnipToolbarUIA("Snipping Tool Overlay"      , "YR/80", ""                            , "Window")
-modeDropdownElement      := SnipToolbarUIA("Snipping Mode Dropdown Menu", "YR/3" , "SnippingModeComboBox"        , "ComboBox")
-popUpHost                := SnipToolbarUIA("PopupHost"                   , "YR/3" , ""                           , "Pane", modeDropdownElement)
+dropDownString := "PopupHost ahk_exe SnippingTool.exe" ; A new window is created for the dropdown
+
+; snippingOverlayElement   := SnipToolbarUIA("Snipping Tool Overlay"      , "YR/80", ""                            , "Window")
+; popUpHost                := SnipToolbarUIA("PopupHost"                   , "YR/3" , ""                           , "Pane")
 
 ; Top level Button and Switches
 captureModeToggleElement := SnipToolbarUIA("[Capture Mode Toggle]"       ,  "YR/0", "CaptureModeToggleSwitch"    , "Button") ; Name varies based on mode
@@ -62,30 +64,49 @@ textExtractorElement     := SnipToolbarUIA("Text extractor"              , "YR/8
 mainCloseButtonElement   := SnipToolbarUIA("Close"                       , "YR/0/", "CloseButton"                , "Button")
 
 ; List items
-rectangleModeElement     := SnipToolbarUIA("Rectangle"                   , "X37"  , ""                           , "ListItem", popUpHost)
-windowModeElement        := SnipToolbarUIA("Window"                      , "X37q" , ""                           , "ListItem", popUpHost)
-fullScreenModeElement    := SnipToolbarUIA("Full screen"                 , "X37r" , ""                           , "ListItem", popUpHost)
-freeformModeElement      := SnipToolbarUIA("Freeform"                    , "X37/" , ""                           , "ListItem", popUpHost)
+modeDropdownElement      := SnipToolbarUIA("Snipping Mode Dropdown Menu", "YR/3" , "SnippingModeComboBox"        , "ComboBox", 0, dropDownString)
+rectangleModeElement     := SnipToolbarUIA("Rectangle"                   , "X37"  , ""                           , "ListItem", modeDropdownElement)
+windowModeElement        := SnipToolbarUIA("Window"                      , "X37q" , ""                           , "ListItem", modeDropdownElement)
+fullScreenModeElement    := SnipToolbarUIA("Full screen"                 , "X37r" , ""                           , "ListItem", modeDropdownElement)
+freeformModeElement      := SnipToolbarUIA("Freeform"                    , "X37/" , ""                           , "ListItem", modeDropdownElement)
 
 
-CheckIfVideoMode() {
+CheckCurrentMode() {
     try {
         local SnipToolOverlay := UIA.ElementFromHandle(snipToolString)
         local Condition := UIA.CreateCondition("AutomationId", modeDropdownElement.AutomationId)
-        ; local dropdown := snipToolOverlay.WaitElement(Condition, UIA.TreeScope.Descendants, 1000) ; Wait for the element to be present
-        Sleep(50)
-        local dropdown := SnipToolOverlay.FindFirst(Condition, UIA.TreeScope.Subtree)
+        local dropdown := snipToolOverlay.WaitElement(Condition, 1000, UIA.TreeScope.Descendants) ; Wait for the element to be present
 
         ; If the dropdown is not enabled, it means we're in video mode
-        if (IsObject(dropdown) && !dropdown.GetPropertyValue("IsEnabled")) {
-            return true
-        } else {
-            return false
+        if (IsObject(dropdown)) {
+            if (!dropdown.GetPropertyValue("IsEnabled")) {
+                return Actions.Video
+            } else {
+                ; Try to get the selected item's name (current mode), whhich should be the first and only child of the dropdown
+                local selectedItem := dropdown.FindFirst(UIA.CreateCondition("AutomationId", "ContentPresenter"), UIA.TreeScope.Children)
+                if (!IsObject(selectedItem))
+                    return 0 ; Not known mode
+                
+                if (selectedItem.Name == rectangleModeElement.Name) {
+                    return Actions.Rectangle ; It's video mode
+                } else if (selectedItem.Name == windowModeElement.Name) {
+                    return Actions.Window ; It's window mode
+                } else if (selectedItem.Name == fullScreenModeElement.Name) {
+                    return Actions.FullScreen ; It's full screen mode
+                } else if (selectedItem.Name == freeformModeElement.Name) {
+                    return Actions.Freeform ; It's freeform mode
+                } else {
+                    OutputDebug("`nUnknown mode: " selectedItem.Name)
+                    return 0 ; Not known mode
+                }
+            }
         }
     } catch as e {
         OutputDebug("`nError checking video mode: " e.Message "`nAt line: " e.Line)
-        return false
+        return 0
     }
+
+    return 0
 }
 
 
@@ -98,7 +119,7 @@ ActivateSnippingToolAction(elementEnum, autoClickToast := false) {
         OutputDebug("`nFailed to launch snipping tool via Activation Context, falling back to Print Screen: " . e.Message)
     }
     
-    WinWaitActive("Snipping Tool Overlay", unset, 2) ; Add a small timeout
+    WinWaitActive(snipToolString, unset, 2) ; Add a small timeout
     if !WinActive("Snipping Tool Overlay") {
         OutputDebug("`nSnipping Tool Overlay did not become active.")
         return
@@ -116,26 +137,29 @@ ActivateSnippingToolAction(elementEnum, autoClickToast := false) {
 
 SetSnippingToolMode(elementEnum) {
     
+    local currentMode := CheckCurrentMode()
+
+    ; If we want to active a non-video mode, we need to check if we're in video mode first
     if (elementEnum == Actions.Rectangle || elementEnum == Actions.Window || elementEnum == Actions.FullScreen || elementEnum == Actions.Freeform)
     {
-        if (CheckIfVideoMode())
+        ; If we are in video mode, toggle to the capture mode to image mode
+        if (currentMode == Actions.Video)
             InvokeElement(captureModeToggleElement, snipToolString)
 
-        ; Now we can invoke the desired mode
-        if (elementEnum == Actions.Rectangle)
+        ; Now we can invoke the desired mode. If we're already in the desired mode, we don't need to do anything
+        if (elementEnum == Actions.Rectangle && currentMode != Actions.Rectangle)
             InvokeElement(rectangleModeElement, snipToolString)
-        else if (elementEnum == Actions.Window)
+        else if (elementEnum == Actions.Window && currentMode != Actions.Window)
             InvokeElement(windowModeElement, snipToolString)
-        else if (elementEnum == Actions.FullScreen)
+        else if (elementEnum == Actions.FullScreen && currentMode != Actions.FullScreen)
             InvokeElement(fullScreenModeElement, snipToolString)
-        else if (elementEnum == Actions.Freeform)
+        else if (elementEnum == Actions.Freeform && currentMode != Actions.Freeform)
             InvokeElement(freeformModeElement, snipToolString)
+
     } else if (elementEnum == Actions.Video) {
-
         ; Check if we're in video mode first, and switch if necessary
-        if (!CheckIfVideoMode())
+        if (currentMode != Actions.Video)
             InvokeElement(captureModeToggleElement, snipToolString)
-
     } else if (elementEnum == Actions.TextExtractor) {
         InvokeElement(textExtractorElement, snipToolString)
     } else if (elementEnum == Actions.Close) {
@@ -165,7 +189,16 @@ InvokeElement(element, initialElementString) {
 
         ; If it has a parent element that needs to be opened first, do that
         if (element.ParentElement !== 0) {
-            local parentSuccess := InvokeElement(element.ParentElement, initialElementString) ; Recursively invoke the parent element
+            local stringToUse := ""
+            if (element.ParentRootString !== "") {
+                stringToUse := element.ParentRootString
+                WinActivate(stringToUse) ; If there's a new root element to use, wait for it to be active
+                WinWaitActive(stringToUse, unset, 2) 
+            } else {
+                stringToUse := initialElementString
+            }
+
+            local parentSuccess := InvokeElement(element.ParentElement, stringToUse) ; Recursively invoke the parent element
             if (parentSuccess) {
                 OutputDebug("`nParent Element `"" element.ParentElement.Name "`" opened.")
             } else {
@@ -174,27 +207,31 @@ InvokeElement(element, initialElementString) {
             }
         }
 
+        ; Prepare to find the element by defining the condition
         local condition := 0
         if (element.AutomationId !== "") {
             OutputDebug("`nAttempting to find element using AutomationId: " element.AutomationId)
             Condition := UIA.CreateCondition("AutomationId", element.AutomationId)
         } else {
-            Sleep(10) ; These need some time to load apparently
+            ; Sleep(10) ; These need some time to load apparently
             OutputDebug("`nAttempting to find element using Name: " element.Name)
             Condition := UIA.CreateCondition("Name", element.Name)
         }
 
+        ; A key line to find the element. This will search the entire subtree of the main element.
         try { 
-            button := MainElement.FindFirst(Condition, UIA.TreeScope.Subtree) 
-        } catch as e {
-            Sleep(50) ; Give it a little time to load and try again
+            button := MainElement.WaitElement(Condition, 1000, UIA.TreeScope.Subtree) ; Wait for the element to be present
+        } 
+        catch as e {
+            Sleep(50) ; Give it a little time to load and try again. This shouldn't happen with WaitElement but just in case.
             try {
                 button := MainElement.FindFirst(Condition, UIA.TreeScope.Subtree)
             }
         }
 
+        ; Check if we found the button / element. Fallback to using the path if not.
         if IsObject(button) {
-            OutputDebug("`n" element.Name " found through AutomationId.")
+            OutputDebug("`n" element.Name " found.")
         } else {
             ; Fall back to find the button using the path
             try {
@@ -206,6 +243,7 @@ InvokeElement(element, initialElementString) {
             }
         }
 
+        ; Final check to see if we found the button, and invoke it
         if IsObject(button) {
             try {
                 button.Click() ; This will automatically try to use the proper method (Invoke, Toggle, etc.). It does not move the mouse to work.
