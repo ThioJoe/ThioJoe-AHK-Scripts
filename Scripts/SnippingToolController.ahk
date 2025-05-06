@@ -4,7 +4,7 @@
 ; Purpose: This script allows you to launch Snipping Tool directly to specific modes.
 ; Author:  ThioJoe
 ; Repo:    https://github.com/ThioJoe/ThioJoe-AHK-Scripts
-; Version: 1.0.0
+; Version: 1.1.0
 ; -----------------------------------------------
 ;
 ; REQUIRED: Set the path to the required UIA.ahk class file. Here it is up one directory then in the Lib folder. If it's in the same folder it would be:  #Include "UIA.ahk"
@@ -285,7 +285,7 @@ CheckAndClickToast() {
                     button := MainElement.FindFirst(Condition, UIA.TreeScope.Subtree)
                 }
 
-                if (isObject(button))
+                if (isObject(button) && button.Name == "Markup and share")
                 {
                     Sleep(250) ; Wait for the button to be ready
                     button.Click()
