@@ -4,7 +4,7 @@
 ; Purpose: This script allows you to launch Snipping Tool directly to specific modes.
 ; Author:  ThioJoe
 ; Repo:    https://github.com/ThioJoe/ThioJoe-AHK-Scripts
-; Version: 1.1.1
+; Version: 1.2.0
 ; -----------------------------------------------
 ;
 ; REQUIRED: Set the path to the required UIA.ahk class file. Here it is up one directory then in the Lib folder. If it's in the same folder it would be:  #Include "UIA.ahk"
@@ -17,7 +17,7 @@
 ;       Optional: You can also use the SetSnippingToolMode() function directly if you want to set a specific mode without launching the tool, like if you know it's already open.
 
 ; EXAMPLE USAGE:  "Ctrl + PrintScreen"  to go directly to text extractor mode. You can even uncomment this exact line to use it if you want. Or call the same function from your main script.
-;   ^PrintScreen:: ActivateSnippingToolAction(Actions.Rectangle, true) ; This will launch the Snipping Tool in Freeform mode and automatically click the toast notification if it appears.
+;   ^PrintScreen:: ActivateSnippingToolAction(Actions.TextExtractor)
 
 ; Optional Parameters:
 ;    Parameter Position 2:  autoClickToast: If set to true, it will automatically click the toast notification that appears after taking a screenshot (within 15 seconds).
@@ -79,14 +79,35 @@ CheckCurrentMode() {
 
         ; If the dropdown is not enabled, it means we're in video mode
         if (IsObject(dropdown)) {
+            ; OutputDebug("`nDropdown found: " dropdown.Name)
             if (!dropdown.GetPropertyValue("IsEnabled")) {
+                OutputDebug("`nDropdown is not enabled. We're in video mode.")
                 return Actions.Video
             } else {
                 ; Try to get the selected item's name (current mode), whhich should be the first and only child of the dropdown
-                local selectedItem := dropdown.FindFirst(UIA.CreateCondition("AutomationId", "ContentPresenter"), UIA.TreeScope.Children)
-                if (!IsObject(selectedItem))
-                    return 0 ; Not known mode
+                local selectedItem := 0
+                try {
+                    selectedItem := dropdown.WaitElement(UIA.CreateCondition("AutomationId", "ContentPresenter"), 250, UIA.TreeScope.Descendants) ; Working
+                }
                 
+                ; If not found, try to get it by Type
+                if (IsObject(selectedItem)) {
+                    OutputDebug("`nFound selected item via AutomationId: " selectedItem.Name)
+                } else {
+                    OutputDebug("`n!  Couldn't find selected dropdown item via AutomationId while checking mode.")
+                    try {
+                        selectedItem := dropdown.WaitElement(UIA.CreateCondition("Type", UIA.Type.ListItem), 250, UIA.TreeScope.Descendants)
+                    }
+
+                    if (IsObject(selectedItem)) {
+                        OutputDebug("`nFound selected dropdown item via Type instead.")
+                    } else {
+                        OutputDebug("`n!  Couldn't find selected dropdown item via Name while checking mode.")
+                        return 0 ; Not known mode
+                    }
+                }
+                
+                OutputDebug("`nCurrently selected mode: " selectedItem.Name)
                 if (selectedItem.Name == rectangleModeElement.Name) {
                     return Actions.Rectangle ; It's video mode
                 } else if (selectedItem.Name == windowModeElement.Name) {
@@ -100,6 +121,8 @@ CheckCurrentMode() {
                     return 0 ; Not known mode
                 }
             }
+        } else {
+            OutputDebug("`n!  Dropdown not found while checking mode.")
         }
     } catch as e {
         OutputDebug("`nError checking video mode: " e.Message "`nAt line: " e.Line)
@@ -161,6 +184,8 @@ SetSnippingToolMode(elementEnum) {
         ; Check if we're in video mode first, and switch if necessary
         if (currentMode != Actions.Video)
             InvokeElement(captureModeToggleElement, snipToolString)
+        else
+            OutputDebug("`nAlready in video mode. No need to switch.")
     } else if (elementEnum == Actions.TextExtractor) {
         InvokeElement(textExtractorElement, snipToolString)
     } else if (elementEnum == Actions.Close) {
@@ -168,6 +193,7 @@ SetSnippingToolMode(elementEnum) {
     } else {
         OutputDebug("`nUnknown action selected.")
     }
+
 }
 
 
