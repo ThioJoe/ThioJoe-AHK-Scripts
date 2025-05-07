@@ -40,6 +40,18 @@ class SnippingToolActions {
 ; ====================================================================================================
 
 ; Simple Helper "proxy" function to call the classe's function without having to create an instance of the class or specifying it with a long name
+/**
+ * Launches the Snipping Tool and activates a specific snipping action or mode.
+ * It will first attempt to launch the Snipping Tool UWP app with arguments. If that fails, it falls back to sending the PrintScreen key.
+ * Once the Snipping Tool overlay is active, it will set the desired snipping mode.
+ *
+ * @param {SnippingToolActions} elementEnum A value from the `SnippingToolActions` class (e.g., `SnippingToolActions.Rectangle`, `SnippingToolActions.TextExtractor`).
+ * This determines which mode or action the Snipping Tool will be set to.
+ * @param {Boolean} [autoClickToast=false] Optional: If set to true, the script will attempt to automatically click the "Markup and share" toast notification
+ * that appears after a snip is taken (excluding TextExtractor, Video, and Close actions).
+ * The script will monitor for this toast for up to 15 seconds. Default is `false`.
+ * @returns This function does not explicitly return a value. Its effects are the launching and controlling of the Snipping Tool.
+ */
 ActivateSnippingToolAction(elementEnum, autoClickToast := false) {
     SnippingToolController.ActivateAction(elementEnum, autoClickToast)
 }
