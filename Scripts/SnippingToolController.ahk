@@ -4,7 +4,7 @@
 ; Purpose: This script allows you to launch Snipping Tool directly to specific modes.
 ; Author:  ThioJoe
 ; Repo:    https://github.com/ThioJoe/ThioJoe-AHK-Scripts
-; Version: 1.2.0
+; Version: 1.2.1
 ; -----------------------------------------------
 ;
 ; REQUIRED: Set the path to the required UIA.ahk class file. Here it is up one directory then in the Lib folder. If it's in the same folder it would be:  #Include "UIA.ahk"
@@ -17,15 +17,15 @@
 ;       Optional: You can also use the SetSnippingToolMode() function directly if you want to set a specific mode without launching the tool, like if you know it's already open.
 
 ; EXAMPLE USAGE:  "Ctrl + PrintScreen"  to go directly to text extractor mode. You can even uncomment this exact line to use it if you want. Or call the same function from your main script.
-;   ^PrintScreen:: ActivateSnippingToolAction(Actions.TextExtractor)
+;   ^PrintScreen:: ActivateSnippingToolAction(SnippingToolActions.TextExtractor, true)
 
 ; Optional Parameters:
 ;    Parameter Position 2:  autoClickToast: If set to true, it will automatically click the toast notification that appears after taking a screenshot (within 15 seconds).
 ; ============================================================================================================
 
-; ------ Available options for Actions (Do Not Change - For Reference Only)  ------
-; Pass them as a parameter to ActivateSnippingToolAction() in the form like "Actions.Rectangle" or "Actions.TextExtractor".
-class Actions {
+; ------ Available options of SnippingToolActions (Do Not Change - For Reference Only)  ------
+; Pass them as a parameter to ActivateSnippingToolAction() in the form like "SnippingToolActions.Rectangle" or "SnippingToolActions.TextExtractor".
+class SnippingToolActions {
     static Rectangle := 1
     static Window    := 2
     static FullScreen := 3
@@ -39,395 +39,400 @@ class Actions {
 ; ====================================================================================================
 ; ====================================================================================================
 
-; Create a new template class that will store names, UIA paths, AutomationIDs, etc.
-class SnipToolbarUIA {
-    __New(name, path, automationId, type, parent := 0, parentRootString := "") {
-        this.Name := name
-        this.Path := path
-        this.AutomationId := automationId
-        this.Type := type
-        this.ParentElement := parent
-        this.ParentRootString := parentRootString
-    }
+; Simple Helper "proxy" function to call the classe's function without having to create an instance of the class or specifying it with a long name
+ActivateSnippingToolAction(elementEnum, autoClickToast := false) {
+    SnippingToolController.ActivateAction(elementEnum, autoClickToast)
 }
 
-; Parent Elements
-snipToolString := "Snipping Tool Overlay ahk_exe SnippingTool.exe"
-dropDownString := "PopupHost ahk_exe SnippingTool.exe" ; A new window is created for the dropdown
+; ----------------------------------- Main Class ---------------------------------
+class SnippingToolController {
 
-; snippingOverlayElement   := SnipToolbarUIA("Snipping Tool Overlay"      , "YR/80", ""                            , "Window")
-; popUpHost                := SnipToolbarUIA("PopupHost"                   , "YR/3" , ""                           , "Pane")
+    ; Class level variables
+    static toastString := "New notification ahk_exe ShellExperienceHost.exe"
+    static isToastClickTimerRunning := false
+    static haveClickedToast := false
 
-; Top level Button and Switches
-captureModeToggleElement := SnipToolbarUIA("[Capture Mode Toggle]"       ,  "YR/0", "CaptureModeToggleSwitch"    , "Button") ; Name varies based on mode
-textExtractorElement     := SnipToolbarUIA("Text extractor"              , "YR/80", "AuxiliaryModeToolbarButton" , "Button")
-mainCloseButtonElement   := SnipToolbarUIA("Close"                       , "YR/0/", "CloseButton"                , "Button")
+    static ActivateAction(elementEnum, autoClickToast) {
+        try {
+            this.Launch_UWP_With_Args("Microsoft.ScreenSketch_8wekyb3d8bbwe!App", "new-snip")
+        } catch Error as e {
+            ; Fallback requires the print screen key to be set as the hotkey for the Snipping Tool
+            Send("{PrintScreen}")
+            OutputDebug("`nFailed to launch snipping tool via Activation Context, falling back to Print Screen: " . e.Message)
+        }
+        
+        WinWaitActive(this.snipToolString, unset, 2) ; Add a small timeout
+        if !WinActive("Snipping Tool Overlay") {
+            OutputDebug("`nSnipping Tool Overlay did not become active.")
+            return
+        }
 
-; List items
-modeDropdownElement      := SnipToolbarUIA("Snipping Mode Dropdown Menu", "YR/3" , "SnippingModeComboBox"        , "ComboBox", 0, dropDownString)
-rectangleModeElement     := SnipToolbarUIA("Rectangle"                   , "X37"  , ""                           , "ListItem", modeDropdownElement)
-windowModeElement        := SnipToolbarUIA("Window"                      , "X37q" , ""                           , "ListItem", modeDropdownElement)
-fullScreenModeElement    := SnipToolbarUIA("Full screen"                 , "X37r" , ""                           , "ListItem", modeDropdownElement)
-freeformModeElement      := SnipToolbarUIA("Freeform"                    , "X37/" , ""                           , "ListItem", modeDropdownElement)
+        ; Once the snipping tool is active, we can proceed to set or invoke the desired action
+        this.SetSnippingToolMode(elementEnum)
 
+        if (autoClickToast && elementEnum != SnippingToolActions.Close && elementEnum != SnippingToolActions.TextExtractor && elementEnum != SnippingToolActions.Video) {
+            ; Check for the toast notification and click it
+            this.haveClickedToast := false ; Reset the flag
+            this.CallFunctionWithTimeout(350, 15) ; Check every 350ms for 15 seconds
+        }
+    }
 
-CheckCurrentMode() {
-    try {
-        local SnipToolOverlay := UIA.ElementFromHandle(snipToolString)
-        local Condition := UIA.CreateCondition("AutomationId", modeDropdownElement.AutomationId)
-        local dropdown := snipToolOverlay.WaitElement(Condition, 1000, UIA.TreeScope.Descendants) ; Wait for the element to be present
+    ; Create a new template class that will store names, UIA paths, AutomationIDs, etc.
+    class SnipToolbarUIA {
+        __New(name, path, automationId, type, parent := 0, parentRootString := "") {
+            this.Name := name
+            this.Path := path
+            this.AutomationId := automationId
+            this.Type := type
+            this.ParentElement := parent
+            this.ParentRootString := parentRootString
+        }
+    }
 
-        ; If the dropdown is not enabled, it means we're in video mode
-        if (IsObject(dropdown)) {
-            ; OutputDebug("`nDropdown found: " dropdown.Name)
-            if (!dropdown.GetPropertyValue("IsEnabled")) {
-                OutputDebug("`nDropdown is not enabled. We're in video mode.")
-                return Actions.Video
-            } else {
-                ; Try to get the selected item's name (current mode), whhich should be the first and only child of the dropdown
-                local selectedItem := 0
-                try {
-                    selectedItem := dropdown.WaitElement(UIA.CreateCondition("AutomationId", "ContentPresenter"), 250, UIA.TreeScope.Descendants) ; Working
-                }
-                
-                ; If not found, try to get it by Type
-                if (IsObject(selectedItem)) {
-                    OutputDebug("`nFound selected item via AutomationId: " selectedItem.Name)
+    ; Parent Elements
+    static snipToolString := "Snipping Tool Overlay ahk_exe SnippingTool.exe"
+    static dropDownString := "PopupHost ahk_exe SnippingTool.exe" ; A new window is created for the dropdown
+
+    ; snippingOverlayElement   := SnipToolbarUIA("Snipping Tool Overlay"      , "YR/80", ""                            , "Window")
+    ; popUpHost                := SnipToolbarUIA("PopupHost"                   , "YR/3" , ""                           , "Pane")
+
+        ; Top level Button and Switches
+    static captureModeToggleElement := this.SnipToolbarUIA("[Capture Mode Toggle]"       ,  "YR/0", "CaptureModeToggleSwitch"    , "Button") ; Name varies based on mode
+    static textExtractorElement     := this.SnipToolbarUIA("Text extractor"              , "YR/80", "AuxiliaryModeToolbarButton" , "Button")
+    static mainCloseButtonElement   := this.SnipToolbarUIA("Close"                       , "YR/0/", "CloseButton"                , "Button")
+
+    ; List items
+    static modeDropdownElement      := this.SnipToolbarUIA("Snipping Mode Dropdown Menu", "YR/3" , "SnippingModeComboBox"        , "ComboBox", 0                       , this.dropDownString)
+    static rectangleModeElement     := this.SnipToolbarUIA("Rectangle"                   , "X37"  , ""                           , "ListItem", this.modeDropdownElement, unset)
+    static windowModeElement        := this.SnipToolbarUIA("Window"                      , "X37q" , ""                           , "ListItem", this.modeDropdownElement, unset)
+    static fullScreenModeElement    := this.SnipToolbarUIA("Full screen"                 , "X37r" , ""                           , "ListItem", this.modeDropdownElement, unset)
+    static freeformModeElement      := this.SnipToolbarUIA("Freeform"                    , "X37/" , ""                           , "ListItem", this.modeDropdownElement, unset)
+
+    static SetSnippingToolMode(elementEnum) {
+    
+        local currentMode := this.CheckCurrentMode()
+
+        ; If we want to active a non-video mode, we need to check if we're in video mode first
+        if (elementEnum == SnippingToolActions.Rectangle || elementEnum == SnippingToolActions.Window || elementEnum == SnippingToolActions.FullScreen || elementEnum == SnippingToolActions.Freeform)
+        {
+            ; If we are in video mode, toggle to the capture mode to image mode
+            if (currentMode == SnippingToolActions.Video)
+                this.InvokeElement(this.captureModeToggleElement, this.snipToolString)
+
+            ; Now we can invoke the desired mode. If we're already in the desired mode, we don't need to do anything
+            if (elementEnum == SnippingToolActions.Rectangle && currentMode != SnippingToolActions.Rectangle)
+                this.InvokeElement(this.rectangleModeElement, this.snipToolString)
+            else if (elementEnum == SnippingToolActions.Window && currentMode != SnippingToolActions.Window)
+                this.InvokeElement(this.windowModeElement, this.snipToolString)
+            else if (elementEnum == SnippingToolActions.FullScreen && currentMode != SnippingToolActions.FullScreen)
+                this.InvokeElement(this.fullScreenModeElement, this.snipToolString)
+            else if (elementEnum == SnippingToolActions.Freeform && currentMode != SnippingToolActions.Freeform)
+                this.InvokeElement(this.freeformModeElement, this.snipToolString)
+
+        } else if (elementEnum == SnippingToolActions.Video) {
+            ; Check if we're in video mode first, and switch if necessary
+            if (currentMode != SnippingToolActions.Video)
+                this.InvokeElement(this.captureModeToggleElement, this.snipToolString)
+            else
+                OutputDebug("`nAlready in video mode. No need to switch.")
+        } else if (elementEnum == SnippingToolActions.TextExtractor) {
+            this.InvokeElement(this.textExtractorElement, this.snipToolString)
+        } else if (elementEnum == SnippingToolActions.Close) {
+            this.InvokeElement(this.mainCloseButtonElement, this.snipToolString)
+        } else {
+            OutputDebug("`nUnknown action selected.")
+        }
+
+    }
+    
+    static CheckCurrentMode() {
+        try {
+            local SnipToolOverlay := UIA.ElementFromHandle(this.snipToolString)
+            local Condition := UIA.CreateCondition("AutomationId", this.modeDropdownElement.AutomationId)
+            local dropdown := snipToolOverlay.WaitElement(Condition, 1000, UIA.TreeScope.Descendants) ; Wait for the element to be present
+
+            ; If the dropdown is not enabled, it means we're in video mode
+            if (IsObject(dropdown)) {
+                ; OutputDebug("`nDropdown found: " dropdown.Name)
+                if (!dropdown.GetPropertyValue("IsEnabled")) {
+                    OutputDebug("`nDropdown is not enabled. We're in video mode.")
+                    return SnippingToolActions.Video
                 } else {
-                    OutputDebug("`n!  Couldn't find selected dropdown item via AutomationId while checking mode.")
+                    ; Try to get the selected item's name (current mode), whhich should be the first and only child of the dropdown
+                    local selectedItem := 0
                     try {
-                        selectedItem := dropdown.WaitElement(UIA.CreateCondition("Type", UIA.Type.ListItem), 250, UIA.TreeScope.Descendants)
+                        selectedItem := dropdown.WaitElement(UIA.CreateCondition("AutomationId", "ContentPresenter"), 250, UIA.TreeScope.Descendants) ; Working
                     }
-
+                    
+                    ; If not found, try to get it by Type
                     if (IsObject(selectedItem)) {
-                        OutputDebug("`nFound selected dropdown item via Type instead.")
+                        OutputDebug("`nFound selected item via AutomationId: " selectedItem.Name)
                     } else {
-                        OutputDebug("`n!  Couldn't find selected dropdown item via Name while checking mode.")
+                        OutputDebug("`n!  Couldn't find selected dropdown item via AutomationId while checking mode.")
+                        try {
+                            selectedItem := dropdown.WaitElement(UIA.CreateCondition("Type", UIA.Type.ListItem), 250, UIA.TreeScope.Descendants)
+                        }
+
+                        if (IsObject(selectedItem)) {
+                            OutputDebug("`nFound selected dropdown item via Type instead.")
+                        } else {
+                            OutputDebug("`n!  Couldn't find selected dropdown item via Name while checking mode.")
+                            return 0 ; Not known mode
+                        }
+                    }
+                    
+                    OutputDebug("`nCurrently selected mode: " selectedItem.Name)
+                    if (selectedItem.Name == this.rectangleModeElement.Name) {
+                        return SnippingToolActions.Rectangle ; It's video mode
+                    } else if (selectedItem.Name == this.windowModeElement.Name) {
+                        return SnippingToolActions.Window ; It's window mode
+                    } else if (selectedItem.Name == this.fullScreenModeElement.Name) {
+                        return SnippingToolActions.FullScreen ; It's full screen mode
+                    } else if (selectedItem.Name == this.freeformModeElement.Name) {
+                        return SnippingToolActions.Freeform ; It's freeform mode
+                    } else {
+                        OutputDebug("`nUnknown mode: " selectedItem.Name)
                         return 0 ; Not known mode
                     }
                 }
-                
-                OutputDebug("`nCurrently selected mode: " selectedItem.Name)
-                if (selectedItem.Name == rectangleModeElement.Name) {
-                    return Actions.Rectangle ; It's video mode
-                } else if (selectedItem.Name == windowModeElement.Name) {
-                    return Actions.Window ; It's window mode
-                } else if (selectedItem.Name == fullScreenModeElement.Name) {
-                    return Actions.FullScreen ; It's full screen mode
-                } else if (selectedItem.Name == freeformModeElement.Name) {
-                    return Actions.Freeform ; It's freeform mode
-                } else {
-                    OutputDebug("`nUnknown mode: " selectedItem.Name)
-                    return 0 ; Not known mode
-                }
+            } else {
+                OutputDebug("`n!  Dropdown not found while checking mode.")
             }
-        } else {
-            OutputDebug("`n!  Dropdown not found while checking mode.")
+        } catch as e {
+            OutputDebug("`nError checking video mode: " e.Message "`nAt line: " e.Line)
+            return 0
         }
-    } catch as e {
-        OutputDebug("`nError checking video mode: " e.Message "`nAt line: " e.Line)
+
         return 0
     }
 
-    return 0
-}
+    static InvokeElement(element, initialElementString) {
+        local button := 0 ; Reset variable
 
-
-ActivateSnippingToolAction(elementEnum, autoClickToast := false) {
-    try {
-        Launch_UWP_With_Args("Microsoft.ScreenSketch_8wekyb3d8bbwe!App", "new-snip")
-    } catch Error as e {
-        ; Fallback requires the print screen key to be set as the hotkey for the Snipping Tool
-        Send("{PrintScreen}")
-        OutputDebug("`nFailed to launch snipping tool via Activation Context, falling back to Print Screen: " . e.Message)
-    }
-    
-    WinWaitActive(snipToolString, unset, 2) ; Add a small timeout
-    if !WinActive("Snipping Tool Overlay") {
-        OutputDebug("`nSnipping Tool Overlay did not become active.")
-        return
-    }
-
-    ; Once the snipping tool is active, we can proceed to set or invoke the desired action
-    SetSnippingToolMode(elementEnum)
-
-    if (autoClickToast && elementEnum != Actions.Close && elementEnum != Actions.TextExtractor && elementEnum != Actions.Video) {
-        ; Check for the toast notification and click it
-        global haveClickedToast := false ; Reset the flag
-        CallFunctionWithTimeout(CheckAndClickToast, 350, 15) ; Check every 350ms for 15 seconds
-    }
-}
-
-
-SetSnippingToolMode(elementEnum) {
-    
-    local currentMode := CheckCurrentMode()
-
-    ; If we want to active a non-video mode, we need to check if we're in video mode first
-    if (elementEnum == Actions.Rectangle || elementEnum == Actions.Window || elementEnum == Actions.FullScreen || elementEnum == Actions.Freeform)
-    {
-        ; If we are in video mode, toggle to the capture mode to image mode
-        if (currentMode == Actions.Video)
-            InvokeElement(captureModeToggleElement, snipToolString)
-
-        ; Now we can invoke the desired mode. If we're already in the desired mode, we don't need to do anything
-        if (elementEnum == Actions.Rectangle && currentMode != Actions.Rectangle)
-            InvokeElement(rectangleModeElement, snipToolString)
-        else if (elementEnum == Actions.Window && currentMode != Actions.Window)
-            InvokeElement(windowModeElement, snipToolString)
-        else if (elementEnum == Actions.FullScreen && currentMode != Actions.FullScreen)
-            InvokeElement(fullScreenModeElement, snipToolString)
-        else if (elementEnum == Actions.Freeform && currentMode != Actions.Freeform)
-            InvokeElement(freeformModeElement, snipToolString)
-
-    } else if (elementEnum == Actions.Video) {
-        ; Check if we're in video mode first, and switch if necessary
-        if (currentMode != Actions.Video)
-            InvokeElement(captureModeToggleElement, snipToolString)
-        else
-            OutputDebug("`nAlready in video mode. No need to switch.")
-    } else if (elementEnum == Actions.TextExtractor) {
-        InvokeElement(textExtractorElement, snipToolString)
-    } else if (elementEnum == Actions.Close) {
-        InvokeElement(mainCloseButtonElement, snipToolString)
-    } else {
-        OutputDebug("`nUnknown action selected.")
-    }
-
-}
-
-
-InvokeElement(element, initialElementString) {
-    local button := 0 ; Reset variable
-
-    try {
-        ; Check if the element is valid
-        if !IsObject(element) {
-            OutputDebug("`nInvalid element passed to InvokeElement.")
-            return false
-        }
-
-        ; Get the main window element
-        local MainElement := UIA.ElementFromHandle(initialElementString)
-        if !IsObject(MainElement) {
-            OutputDebug("`nFailed to get element.")
-            return false
-        }
-
-        ; If it has a parent element that needs to be opened first, do that
-        if (element.ParentElement !== 0) {
-            local stringToUse := ""
-            if (element.ParentRootString !== "") {
-                stringToUse := element.ParentRootString
-                WinActivate(stringToUse) ; If there's a new root element to use, wait for it to be active
-                WinWaitActive(stringToUse, unset, 2) 
-            } else {
-                stringToUse := initialElementString
-            }
-
-            local parentSuccess := InvokeElement(element.ParentElement, stringToUse) ; Recursively invoke the parent element
-            if (parentSuccess) {
-                OutputDebug("`nParent Element `"" element.ParentElement.Name "`" opened.")
-            } else {
-                OutputDebug("`nFailed to open parent element `"" element.ParentElement.Name "`". Will keep going.")
-                ; Keep going just in case it somehow still works
-            }
-        }
-
-        ; Prepare to find the element by defining the condition
-        local condition := 0
-        if (element.AutomationId !== "") {
-            OutputDebug("`nAttempting to find element using AutomationId: " element.AutomationId)
-            Condition := UIA.CreateCondition("AutomationId", element.AutomationId)
-        } else {
-            ; Sleep(10) ; These need some time to load apparently
-            OutputDebug("`nAttempting to find element using Name: " element.Name)
-            Condition := UIA.CreateCondition("Name", element.Name)
-        }
-
-        ; A key line to find the element. This will search the entire subtree of the main element.
-        try { 
-            button := MainElement.WaitElement(Condition, 1000, UIA.TreeScope.Subtree) ; Wait for the element to be present
-        } 
-        catch as e {
-            Sleep(50) ; Give it a little time to load and try again. This shouldn't happen with WaitElement but just in case.
-            try {
-                button := MainElement.FindFirst(Condition, UIA.TreeScope.Subtree)
-            }
-        }
-
-        ; Check if we found the button / element. Fallback to using the path if not.
-        if IsObject(button) {
-            OutputDebug("`n" element.Name " found.")
-        } else {
-            ; Fall back to find the button using the path
-            try {
-                button := MainElement.ElementFromPath(element.Path)
-            }
-            
-            if IsObject(button) {
-                OutputDebug("`n" element.Name " found through path.")
-            }
-        }
-
-        ; Final check to see if we found the button, and invoke it
-        if IsObject(button) {
-            try {
-                button.Click() ; This will automatically try to use the proper method (Invoke, Toggle, etc.). It does not move the mouse to work.
-            }
-            OutputDebug("`n`"" element.Name "`" invoked successfully.")
-            return true
-        } else {
-            OutputDebug("`n`"" element.Name "`" not found.")
-            return false
-        }
-
-    } catch as e {
-        OutputDebug("`n" element.Name " -- Error invoking element: " e.Message "`nAt line: " e.Line)
-        return false
-    }
-}
-
-/**
- * Launches a UWP application using its AUMID and an activation context string
- * via the IApplicationActivationManager COM interface using ComCall.
- */
-Launch_UWP_With_Args(appUserModelId, activationContext, options := 0) {
-    local CLSID_ApplicationActivationManager := "{45BA127D-10A8-46EA-8AB7-56EA9078943C}"
-    local IID_IApplicationActivationManager  := "{2E941141-7F97-4756-BA1D-9DECDE894A3D}"
-    local S_OK := 0
-
-    local processIdBuffer := Buffer(4, 0)
-    local manager := unset
-
-    try {
-        ; Create the COM object - this returns a ComValue wrapper because we specified a non-IDispatch IID
-        manager := ComObject(CLSID_ApplicationActivationManager, IID_IApplicationActivationManager)
-        if !IsObject(manager) {
-            throw(Error("Failed to create IApplicationActivationManager COM object."))
-        }
-
-        ; --- Use ComCall to invoke the method via the interface pointer ---
-        ; HRESULT ActivateApplication(LPCWSTR, LPCWSTR, ACTIVATEOPTIONS, DWORD*) is VTable index 3
-        hResult := ComCall(3, manager, "WStr", appUserModelId, "WStr", activationContext, "Int", options, "Ptr", processIdBuffer.Ptr)
-
-        ; Check the HRESULT returned by the COM method itself
-        if (hResult != S_OK) {
-            errMsg := "IApplicationActivationManager.ActivateApplication (via ComCall) failed with HRESULT: 0x" . Format("{:X}", hResult)
-            if (hResult == 0x80070002) errMsg .= " (Error: File Not Found - Check AUMID?)"
-            if (hResult == 0x800704C7) errMsg .= " (Error: Cancelled?)"
-            if (hResult == 0x80270254) errMsg .= " (Error: Activation Failed - Privileges/Disabled?)"
-            throw(Error(errMsg))
-        }
-
-        local launchedPID := NumGet(processIdBuffer, 0, "UInt")
-        return launchedPID
-
-    } catch Error as e {
-        throw(Error("Error during UWP activation: " . e.Message))
-    }
-    ; 'manager' (ComValue) is automatically released when it goes out of scope.
-}
-
-
-; Loop that checks for the presence of a toast notification ahk_exe ShellExperienceHost.exe, title of New notification
-toastString := "New notification ahk_exe ShellExperienceHost.exe"
-isToastClickTimerRunning := false
-haveClickedToast := false
-
-CheckAndClickToast() {
-    local existResult := WinExist("ahk_exe ShellExperienceHost.exe")
-    local MainElement := 0
-    local button := 0
-
-    ; Check if the toast has already been clicked
-    if (haveClickedToast) {
-        OutputDebug("`nToast already clicked. Exiting.")
-        return
-    }
-
-    if (existResult)
-    {
         try {
-            MainElement := UIA.ElementFromHandle(toastString)
-            if (isObject(MainElement))
-            {
-                Condition := UIA.CreateCondition("AutomationId", "VerbButton")
+            ; Check if the element is valid
+            if !IsObject(element) {
+                OutputDebug("`nInvalid element passed to InvokeElement.")
+                return false
+            }
+
+            ; Get the main window element
+            local MainElement := UIA.ElementFromHandle(initialElementString)
+            if !IsObject(MainElement) {
+                OutputDebug("`nFailed to get element.")
+                return false
+            }
+
+            ; If it has a parent element that needs to be opened first, do that
+            if (element.ParentElement !== 0) {
+                local stringToUse := ""
+                if (element.ParentRootString !== "") {
+                    stringToUse := element.ParentRootString
+                    WinActivate(stringToUse) ; If there's a new root element to use, wait for it to be active
+                    WinWaitActive(stringToUse, unset, 2) 
+                } else {
+                    stringToUse := initialElementString
+                }
+
+                local parentSuccess := this.InvokeElement(element.ParentElement, stringToUse) ; Recursively invoke the parent element
+                if (parentSuccess) {
+                    OutputDebug("`nParent Element `"" element.ParentElement.Name "`" opened.")
+                } else {
+                    OutputDebug("`nFailed to open parent element `"" element.ParentElement.Name "`". Will keep going.")
+                    ; Keep going just in case it somehow still works
+                }
+            }
+
+            ; Prepare to find the element by defining the condition
+            local condition := 0
+            if (element.AutomationId !== "") {
+                OutputDebug("`nAttempting to find element using AutomationId: " element.AutomationId)
+                Condition := UIA.CreateCondition("AutomationId", element.AutomationId)
+            } else {
+                ; Sleep(10) ; These need some time to load apparently
+                OutputDebug("`nAttempting to find element using Name: " element.Name)
+                Condition := UIA.CreateCondition("Name", element.Name)
+            }
+
+            ; A key line to find the element. This will search the entire subtree of the main element.
+            try { 
+                button := MainElement.WaitElement(Condition, 1000, UIA.TreeScope.Subtree) ; Wait for the element to be present
+            } 
+            catch as e {
+                Sleep(50) ; Give it a little time to load and try again. This shouldn't happen with WaitElement but just in case.
                 try {
                     button := MainElement.FindFirst(Condition, UIA.TreeScope.Subtree)
                 }
-
-                if (isObject(button) && button.Name == "Markup and share")
-                {
-                    Sleep(250) ; Wait for the button to be ready. Even when not automating, the button is not clickable immediately.
-                    button.Click()
-                    global haveClickedToast := true ; Set the flag to true to prevent clicking again unless the click fails
-                    
-                    local activateResult := WaitAndActivateSnipWindow() ; Wait for the snipping tool window to exist and activate it
-                    if (activateResult) {
-                        CancelToastCheckTimer() ; Cancel the timer
-                        OutputDebug("`nToast found and clicked.")
-                        return true
-                    } else {
-                        ; If it timed out
-                        OutputDebug("`nFailed to activate Snipping Tool Overlay after clicking toast.")
-                        global haveClickedToast := false ; Reset the flag to allow for another click
-                        return false
-                    }
-                } 
             }
-        } catch as e {
-            OutputDebug("`nError checking for toast: " e.Message "`nAt line: " e.Line)
-        }
-    }
-    ; OutputDebug("`nToast not found or button not clickable.")
-    ; Return false unless we find the button
-    return false
-}
 
-; Wait for the snipping tool window to exist and activate it and bring to front
-WaitAndActivateSnipWindow() {
-    local snipWindow := WinWait("Snipping Tool", unset, 3) ; Waits for the window to exist, with a timeout
-    if (snipWindow) {
-        WinActivate(snipWindow)
-        WinWaitActive(snipWindow, unset, 0.5) ; Wait for the window to be active. Should be instant but just in case
-        if (WinActive("Snipping Tool")) {
-            OutputDebug("`nSnipping Tool Overlay activated.")
-            return true
-        } else {
-            OutputDebug("`nSnipping Tool Overlay did not become active.")
+            ; Check if we found the button / element. Fallback to using the path if not.
+            if IsObject(button) {
+                OutputDebug("`n" element.Name " found.")
+            } else {
+                ; Fall back to find the button using the path
+                try {
+                    button := MainElement.ElementFromPath(element.Path)
+                }
+                
+                if IsObject(button) {
+                    OutputDebug("`n" element.Name " found through path.")
+                }
+            }
+
+            ; Final check to see if we found the button, and invoke it
+            if IsObject(button) {
+                try {
+                    button.Click() ; This will automatically try to use the proper method (Invoke, Toggle, etc.). It does not move the mouse to work.
+                }
+                OutputDebug("`n`"" element.Name "`" invoked successfully.")
+                return true
+            } else {
+                OutputDebug("`n`"" element.Name "`" not found.")
+                return false
+            }
+
+        } catch as e {
+            OutputDebug("`n" element.Name " -- Error invoking element: " e.Message "`nAt line: " e.Line)
             return false
         }
-    } else {
-        OutputDebug("`nSnipping Tool Overlay not found.")
     }
 
-    return false
-}
+    /**
+     * Launches a UWP application using its AUMID and an activation context string
+     * via the IApplicationActivationManager COM interface using ComCall.
+     */
+    static Launch_UWP_With_Args(appUserModelId, activationContext, options := 0) {
+        local CLSID_ApplicationActivationManager := "{45BA127D-10A8-46EA-8AB7-56EA9078943C}"
+        local IID_IApplicationActivationManager  := "{2E941141-7F97-4756-BA1D-9DECDE894A3D}"
+        local S_OK := 0
 
-CancelToastCheckTimer() {
-    ; Cancels the timer
-    SetTimer(CheckAndClickToast, 0)
-    global isToastClickTimerRunning := false
-    OutputDebug("`nTimer cancelled.")
-}
+        local processIdBuffer := Buffer(4, 0)
+        local manager := unset
 
+        try {
+            ; Create the COM object - this returns a ComValue wrapper because we specified a non-IDispatch IID
+            manager := ComObject(CLSID_ApplicationActivationManager, IID_IApplicationActivationManager)
+            if !IsObject(manager) {
+                throw(Error("Failed to create IApplicationActivationManager COM object."))
+            }
 
-CallFunctionWithTimeout(FuncToCall, IntervalMs, TimeoutSeconds) {
-    local startTime := A_TickCount
-    local endTime := startTime + (TimeoutSeconds * 1000)
+            ; --- Use ComCall to invoke the method via the interface pointer ---
+            ; HRESULT ActivateApplication(LPCWSTR, LPCWSTR, ACTIVATEOPTIONS, DWORD*) is VTable index 3
+            hResult := ComCall(3, manager, "WStr", appUserModelId, "WStr", activationContext, "Int", options, "Ptr", processIdBuffer.Ptr)
 
-    if (isToastClickTimerRunning) {
-        ; OutputDebug("`nTimer already running. Exiting.")
-        return
-    } else {
-        global isToastClickTimerRunning := true
+            ; Check the HRESULT returned by the COM method itself
+            if (hResult != S_OK) {
+                errMsg := "IApplicationActivationManager.ActivateApplication (via ComCall) failed with HRESULT: 0x" . Format("{:X}", hResult)
+                if (hResult == 0x80070002) errMsg .= " (Error: File Not Found - Check AUMID?)"
+                if (hResult == 0x800704C7) errMsg .= " (Error: Cancelled?)"
+                if (hResult == 0x80270254) errMsg .= " (Error: Activation Failed - Privileges/Disabled?)"
+                throw(Error(errMsg))
+            }
+
+            local launchedPID := NumGet(processIdBuffer, 0, "UInt")
+            return launchedPID
+
+        } catch Error as e {
+            throw(Error("Error during UWP activation: " . e.Message))
+        }
+        ; 'manager' (ComValue) is automatically released when it goes out of scope.
     }
 
-    ; Use SetTimer to call the function at intervals but stop after the timeout or if it returns true
-    SetTimer(FuncToCall, IntervalMs)
+    ; Wait for the snipping tool window to exist and activate it and bring to front
+    static WaitAndActivateSnipWindow() {
+        local snipWindow := WinWait("Snipping Tool", unset, 3) ; Waits for the window to exist, with a timeout
+        if (snipWindow) {
+            WinActivate(snipWindow)
+            WinWaitActive(snipWindow, unset, 0.5) ; Wait for the window to be active. Should be instant but just in case
+            if (WinActive("Snipping Tool")) {
+                OutputDebug("`nSnipping Tool Overlay activated.")
+                return true
+            } else {
+                OutputDebug("`nSnipping Tool Overlay did not become active.")
+                return false
+            }
+        } else {
+            OutputDebug("`nSnipping Tool Overlay not found.")
+        }
 
-    ; Cancel the timer after the timeout. Using negative makes it run once after the timeout
-    SetTimer(CancelToastCheckTimer, (TimeoutSeconds * -1000)) 
+        return false
+    }
 
+    ; Looped cycle that checks for the presence of a toast notification ahk_exe ShellExperienceHost.exe, title of New notification
+    static CheckAndClickToast() {
+        local existResult := WinExist("ahk_exe ShellExperienceHost.exe")
+        local MainElement := 0
+        local button := 0
+
+        ; Check if the toast has already been clicked
+        if (this.haveClickedToast) {
+            OutputDebug("`nToast already clicked. Exiting.")
+            return
+        }
+
+        if (existResult)
+        {
+            try {
+                MainElement := UIA.ElementFromHandle(this.toastString)
+                if (isObject(MainElement))
+                {
+                    Condition := UIA.CreateCondition("AutomationId", "VerbButton")
+                    try {
+                        button := MainElement.FindFirst(Condition, UIA.TreeScope.Subtree)
+                    }
+
+                    if (isObject(button) && button.Name == "Markup and share")
+                    {
+                        Sleep(250) ; Wait for the button to be ready. Even when not automating, the button is not clickable immediately.
+                        button.Click()
+                        this.haveClickedToast := true ; Set the flag to true to prevent clicking again unless the click fails
+                        
+                        local activateResult := this.WaitAndActivateSnipWindow() ; Wait for the snipping tool window to exist and activate it
+                        if (activateResult) {
+                            this.CancelToastCheckTimer() ; Cancel the timer
+                            OutputDebug("`nToast found and clicked.")
+                            return true
+                        } else {
+                            ; If it timed out
+                            OutputDebug("`nFailed to activate Snipping Tool Overlay after clicking toast.")
+                            this.haveClickedToast := false ; Reset the flag to allow for another click
+                            return false
+                        }
+                    } 
+                }
+            } catch as e {
+                OutputDebug("`nError checking for toast: " e.Message "`nAt line: " e.Line)
+            }
+        }
+        ; OutputDebug("`nToast not found or button not clickable.")
+        ; Return false unless we find the button
+        return false
+    }
+
+    ; The SetTimer function was not accepting the bound function directly, so we create a static bound function to use instead for some reason
+    static boundCheckToast := SnippingToolController.CheckAndClickToast.Bind(SnippingToolController)
+    static boundCancelTimer := SnippingToolController.CancelToastCheckTimer.Bind(SnippingToolController)
+
+    static CancelToastCheckTimer() {
+        ; Cancels the timer
+        SetTimer(this.boundCheckToast, 0)
+        this.isToastClickTimerRunning := false
+        OutputDebug("`nTimer cancelled.")
+    }
+   
+
+    static CallFunctionWithTimeout(IntervalMs, TimeoutSeconds) {
+        if (this.isToastClickTimerRunning) {
+            OutputDebug("`nTimer already running. Exiting CallFunctionWithTimeout.")
+            return
+        }
+
+        this.isToastClickTimerRunning := true
+        OutputDebug("`nSetting up timers. isToastClickTimerRunning = true")
+
+        ; Use SetTimer with the BoundFunc objects
+        SetTimer(this.boundCheckToast, IntervalMs)
+        ; A timeout timer to cancel the toast check after a certain time if not clicked
+        SetTimer(this.boundCancelTimer, (TimeoutSeconds * -1000))
+    }
 }
