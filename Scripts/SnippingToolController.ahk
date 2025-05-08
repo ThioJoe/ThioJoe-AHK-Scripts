@@ -4,7 +4,7 @@
 ; Purpose: This script allows you to launch Snipping Tool directly to specific modes.
 ; Author:  ThioJoe
 ; Repo:    https://github.com/ThioJoe/ThioJoe-AHK-Scripts
-; Version: 1.2.1
+; Version: 1.3.0
 ; -----------------------------------------------
 ;
 ; REQUIRED: Set the path to the required UIA.ahk class file. Here it is up one directory then in the Lib folder. If it's in the same folder it would be:  #Include "UIA.ahk"
@@ -53,6 +53,10 @@ class SnippingToolActions {
  * @returns This function does not explicitly return a value. Its effects are the launching and controlling of the Snipping Tool.
  */
 ActivateSnippingToolAction(elementEnum, autoClickToast := false) {
+    if !IsSet(elementEnum) || !IsNumber(elementEnum) {
+            OutputDebug("`nInvalid elementEnum passed to ActivateAction.")
+            throw(Error("Invalid elementEnum passed to ActivateAction."))
+        }
     SnippingToolController.ActivateAction(elementEnum, autoClickToast)
 }
 
@@ -64,7 +68,47 @@ class SnippingToolController {
     static isToastClickTimerRunning := false
     static haveClickedToast := false
 
-    static ActivateAction(elementEnum, autoClickToast) {
+    static ActivateAction(elementEnum, autoClickToast := false) {
+        if (elementEnum == SnippingToolActions.Rectangle 
+            || elementEnum == SnippingToolActions.Window 
+            || elementEnum == SnippingToolActions.Freeform 
+            || elementEnum == SnippingToolActions.Video 
+            || elementEnum == SnippingToolActions.FullScreen)
+        {
+            this.ActivateActionDirectly(elementEnum, autoClickToast)
+        } else {
+            this.ActivateActionWithUIA(elementEnum, autoClickToast)
+        }
+    }
+
+    ; For certain modes we can launch directly using ms-screenclip protocol commands
+    static ActivateActionDirectly(elementEnum, autoClickToast) {
+        local shell := ComObject("Shell.Application")
+
+        if (elementEnum == SnippingToolActions.Rectangle) {
+            shell.ShellExecute("ms-screenclip:capture?clippingMode=Rectangle")
+        } else if (elementEnum == SnippingToolActions.Window) {
+            shell.ShellExecute("ms-screenclip:capture?clippingMode=Window")
+        } else if (elementEnum == SnippingToolActions.Freeform) {
+            shell.ShellExecute("ms-screenclip:capture?clippingMode=Freeform")
+        } else if (elementEnum == SnippingToolActions.Video) {
+            shell.ShellExecute("ms-screenclip:capture?type=recording")
+        } else if (elementEnum == SnippingToolActions.FullScreen) {
+            shell.ShellExecute("ms-screenclip:capture?type=snapshot")
+        }
+
+        this.EnableAutoclickIfApplicable(elementEnum, autoClickToast)
+    }
+
+    static EnableAutoclickIfApplicable(elementEnum, autoClickToast) {
+        if (autoClickToast && elementEnum != SnippingToolActions.Close && elementEnum != SnippingToolActions.TextExtractor && elementEnum != SnippingToolActions.Video) {
+            ; Check for the toast notification and click it
+            this.haveClickedToast := false ; Reset the flag
+            this.CallFunctionWithTimeout(350, 15) ; Check every 350ms for 15 seconds
+        }
+    }
+
+    static ActivateActionWithUIA(elementEnum, autoClickToast) {
         try {
             this.Launch_UWP_With_Args("Microsoft.ScreenSketch_8wekyb3d8bbwe!App", "new-snip")
         } catch Error as e {
@@ -82,11 +126,7 @@ class SnippingToolController {
         ; Once the snipping tool is active, we can proceed to set or invoke the desired action
         this.SetSnippingToolMode(elementEnum)
 
-        if (autoClickToast && elementEnum != SnippingToolActions.Close && elementEnum != SnippingToolActions.TextExtractor && elementEnum != SnippingToolActions.Video) {
-            ; Check for the toast notification and click it
-            this.haveClickedToast := false ; Reset the flag
-            this.CallFunctionWithTimeout(350, 15) ; Check every 350ms for 15 seconds
-        }
+        this.EnableAutoclickIfApplicable(elementEnum, autoClickToast)
     }
 
     ; Create a new template class that will store names, UIA paths, AutomationIDs, etc.
@@ -352,11 +392,11 @@ class SnippingToolController {
 
     ; Wait for the snipping tool window to exist and activate it and bring to front
     static WaitAndActivateSnipWindow() {
-        local snipWindow := WinWait("Snipping Tool", unset, 3) ; Waits for the window to exist, with a timeout
+        local snipWindow := WinWait("Snipping Tool ahk_exe SnippingTool.exe", unset, 3) ; Waits for the window to exist, with a timeout
         if (snipWindow) {
             WinActivate(snipWindow)
             WinWaitActive(snipWindow, unset, 0.5) ; Wait for the window to be active. Should be instant but just in case
-            if (WinActive("Snipping Tool")) {
+            if (WinActive("Snipping Tool ahk_exe SnippingTool.exe")) {
                 OutputDebug("`nSnipping Tool Overlay activated.")
                 return true
             } else {
