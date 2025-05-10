@@ -615,20 +615,20 @@ class ExplorerDialogPathSelector {
             ToolTip()
         }
 
-        ; Detect windows with error handling
+        ; Detect the window under the mouse cursor
         try {
-            windowID := WinGetID("a")
-            windowClass := WinGetClass("a")
-            windowHwnd := WinExist("a")
-            windowExe := WinGetProcessName("a")
+            MouseGetPos(unset, unset, &windowID)
+            windowClass := WinGetClass("ahk_id " windowID)
+            windowHwnd := WinExist("ahk_id " windowID)
+            windowExe := WinGetProcessName("ahk_id " windowID)
         } catch as err {
             ; If we can't get window info, wait briefly and try once more
             Sleep(25)
             try {
-                windowID := WinGetID("a")
-                windowClass := WinGetClass("a")
-                windowHwnd := WinExist("a")
-                windowExe := WinGetProcessName("a")
+                MouseGetPos(unset, unset, &windowID)
+                windowClass := WinGetClass("ahk_id " windowID)
+                windowHwnd := WinExist("ahk_id " windowID)
+                windowExe := WinGetProcessName("ahk_id " windowID)
             } catch as err {
                 if (debugMode) {
                     ToolTip("Unable to detect active window")
