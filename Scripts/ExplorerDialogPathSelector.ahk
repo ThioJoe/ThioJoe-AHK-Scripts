@@ -578,11 +578,17 @@ class ExplorerDialogPathSelector {
                 text := SimulateBoldText(text)
             }
 
-            ; Add the item and increment the counter
-            menuObj.Insert(unset, text, this.Navigate.Bind(unset, unset, unset, pathStr, windowClass, windowID))
+            ; Insert the menu item attached to the callback with parameters that will execute if that particular menu item is clicked
+            ; The first 3 parameters of the callback are automatically provided by the Insert method, then we add additional parameters we'll need
+            ; For some reason when refactoring the code so everything is in a class, binding the Navigate function stopped working right. 
+            ;       It was no longer passing the name of the menu item as the first parameter to Navigate().
+            ;       But this instead where we use fat-arrow syntax to pass the parameters works for some reason
+            ;           This is probably better anyway since it makes it easier to see what parameters are being passed
+            ;       So basically for the callback, we create a temporary wrapper function that calls the Navigate function with the parameters we want
+            ;           And apparently this doesn't have issues with classes / this references like the other way did
+            menuObj.Insert(unset, text, (iName, iPos, mObj) => this.Navigate(iName, iPos, mObj, pathStr, windowClass, windowID))
+            
             currentMenuNum++
-
-            ;menuItemTrackerObj.DefineProp(currentMenuNum, {Value: {pathStr: pathStr, text: pathStr}}) ; For debugging purposes
 
             if (!IsSet(path)) { ; It's a header because it's just text
                 menuObj.Disable(currentMenuNum "&")
@@ -616,6 +622,7 @@ class ExplorerDialogPathSelector {
         }
 
         ; Detect the window under the mouse cursor
+        windowID := 0
         try {
             MouseGetPos(unset, unset, &windowID)
             windowClass := WinGetClass("ahk_id " windowID)
@@ -623,6 +630,7 @@ class ExplorerDialogPathSelector {
             windowExe := WinGetProcessName("ahk_id " windowID)
         } catch as err {
             ; If we can't get window info, wait briefly and try once more
+            OutputDebug("Error getting window info. Will Try again in 25ms: " err.Message)
             Sleep(25)
             try {
                 MouseGetPos(unset, unset, &windowID)
@@ -630,6 +638,7 @@ class ExplorerDialogPathSelector {
                 windowHwnd := WinExist("ahk_id " windowID)
                 windowExe := WinGetProcessName("ahk_id " windowID)
             } catch as err {
+                OutputDebug("Error getting window info: " err.Message)
                 if (debugMode) {
                     ToolTip("Unable to detect active window")
                     Sleep(1000)
@@ -861,6 +870,22 @@ class ExplorerDialogPathSelector {
         ; Clean up
         CurrentLocations := ""
     }
+
+    ; CallbackArgsTest(args*) {
+    ;     for i, arg in args {
+    ;         if (!IsSet(arg)){
+    ;             OutputDebug("`nArgument " i " is not set")
+    ;         } else if (arg = "") {
+    ;             OutputDebug("`nArgument " i " is empty")
+    ;         } else if (IsObject(arg)) {
+    ;             ; Output the type
+    ;             OutputDebug("`nArgument " i ": " Type(arg))
+    ;         }  else {
+    ;             OutputDebug("`nArgument " i ": " arg)
+    ;         }
+    ;     }
+    ;     return
+    ; }
 
     ; Callback function to navigate to a path. The first 3 parameters are provided by the .Add method of the Menu object
     ; The other two parameters must be provided using .Bind when specifying this function as a callback!
