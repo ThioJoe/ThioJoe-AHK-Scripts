@@ -937,31 +937,28 @@ class ExplorerDialogPathSelector {
         
         NavigateUsingAddressbar(path, windowHwnd) {
             ; ----------------- Local functions -----------------
-            CheckAddressbarReadyAndNavigate(attemptNumber := 1) {
+            local eachWaitTime := 25
+            CheckAddressbarReadyAndNavigate(waitedMs := 0) {
                 addressbarHwnd := ControlGetFocus("ahk_id " windowHwnd)
                 addressBarClassNN := ControlGetClassNN(addressbarHwnd)
 
                 ; Regex match if the address bar is an Edit control but not Edit1, which seems to always the file name box. But the address bar box might not always be Edit2
                 if (addressBarClassNN != "Edit1" and addressBarClassNN ~= "Edit\d+") {
-                    DoNavigation(addressBarClassNN, addressbarHwnd)
-                } else if (attemptNumber <= 3) {
+                    ControlSetText(path, addressBarClassNN, "ahk_id " windowHwnd)
+                    ControlSend("{Enter}", addressBarClassNN, "ahk_id " windowHwnd)
+                    ControlFocus("Edit1", "ahk_id " windowHwnd) ; Return focus to the file name box
+                } else if (waitedMs <= 300) {
                     ; Try waiting a bit longer for the address bar to be ready
-                    Sleep(50)
-                    CheckAddressbarReadyAndNavigate(attemptNumber + 1)
+                    Sleep(eachWaitTime)
+                    OutputDebug("`n`nWaiting for address bar to be ready. Waited " waitedMs "ms")
+                    CheckAddressbarReadyAndNavigate(waitedMs + eachWaitTime)
                 } else {
                     OutputDebug("`n`nAddress bar didn't match expected class name. Found ClassNN: " addressBarClassNN)
                 }
             }
-            ; ----------------
-            DoNavigation(_addressbarClassNN, _addressbarHwnd) {
-                ControlSetText(path, _addressbarClassNN, "ahk_id " windowHwnd)
-                ControlSend("{Enter}", _addressbarClassNN, "ahk_id " windowHwnd)
-                ControlFocus("Edit1", "ahk_id " windowHwnd) ; Return focus to the file name box
-            }
             ; ----------------- End of local functions -----------------
             ; Activate the window
             WinActivate("ahk_id " windowHwnd)
-            WinWaitActive("ahk_id " windowHwnd)
             ; Try getting the text from the Edit1 control
             originalFileName := ""
             try {
@@ -999,19 +996,13 @@ class ExplorerDialogPathSelector {
         }
 
         DetectDialogType(hwnd) {
-            ; Activate the window and wait
-            WinActivate("ahk_id " hwnd)
-            if !WinWaitActive("ahk_class #32770", unset, 10) {
-                OutputDebug("Dialog window never activated, timed out.")
-                return 0
-            }
-
             try {
                 addressbarHwnd := GetDialogAddressbarHwnd(hwnd)
                 if (addressbarHwnd) {
                     return { Type: "ModernDialog", ControlHwnd: addressbarHwnd }
                 }
-            } catch  {
+            } catch as err {
+                OutputDebug("`n`nApparently not a modern dialog. Checking other dialog types. Message: " err.Message)
                 ; Nothing just move on
             }
 
