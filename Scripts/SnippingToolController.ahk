@@ -35,6 +35,8 @@ class SnippingToolActions {
     static Close := 7
 }
 
+DebugMode := false ; Set to true to enable debug messages. Set to false to disable them.
+
 ; ====================================================================================================
 ; ====================================================================================================
 ; ====================================================================================================
@@ -73,7 +75,9 @@ class SnippingToolController {
             || elementEnum == SnippingToolActions.Window 
             || elementEnum == SnippingToolActions.Freeform 
             || elementEnum == SnippingToolActions.Video 
-            || elementEnum == SnippingToolActions.FullScreen)
+            || elementEnum == SnippingToolActions.FullScreen
+            || elementEnum == SnippingToolActions.TextExtractor
+            )
         {
             this.ActivateActionDirectly(elementEnum, autoClickToast)
         } else {
@@ -95,6 +99,8 @@ class SnippingToolController {
             shell.ShellExecute("ms-screenclip:capture?type=recording")
         } else if (elementEnum == SnippingToolActions.FullScreen) {
             shell.ShellExecute("ms-screenclip:capture?type=snapshot")
+        } else if (elementEnum == SnippingToolActions.TextExtractor) {
+            shell.ShellExecute("ms-screenclip:///?source=TextExtractorHotKey&type=textExtractor")
         }
 
         this.EnableAutoclickIfApplicable(elementEnum, autoClickToast)
@@ -114,12 +120,12 @@ class SnippingToolController {
         } catch Error as e {
             ; Fallback requires the print screen key to be set as the hotkey for the Snipping Tool
             Send("{PrintScreen}")
-            OutputDebug("`nFailed to launch snipping tool via Activation Context, falling back to Print Screen: " . e.Message)
+            this.OutErrorDebug("`nFailed to launch snipping tool via Activation Context, falling back to Print Screen: " . e.Message)
         }
         
         WinWaitActive(this.snipToolString, unset, 2) ; Add a small timeout
         if !WinActive("Snipping Tool Overlay") {
-            OutputDebug("`nSnipping Tool Overlay did not become active.")
+            this.OutErrorDebug("`nSnipping Tool Overlay did not become active.")
             return
         }
 
@@ -186,13 +192,13 @@ class SnippingToolController {
             if (currentMode != SnippingToolActions.Video)
                 this.InvokeElement(this.captureModeToggleElement, this.snipToolString)
             else
-                OutputDebug("`nAlready in video mode. No need to switch.")
+                this.OutErrorDebug("`nAlready in video mode. No need to switch.")
         } else if (elementEnum == SnippingToolActions.TextExtractor) {
             this.InvokeElement(this.textExtractorElement, this.snipToolString)
         } else if (elementEnum == SnippingToolActions.Close) {
             this.InvokeElement(this.mainCloseButtonElement, this.snipToolString)
         } else {
-            OutputDebug("`nUnknown action selected.")
+            this.OutErrorDebug("`nUnknown action selected.")
         }
 
     }
@@ -228,7 +234,7 @@ class SnippingToolController {
                         if (IsObject(selectedItem)) {
                             OutputDebug("`nFound selected dropdown item via Type instead.")
                         } else {
-                            OutputDebug("`n!  Couldn't find selected dropdown item via Name while checking mode.")
+                            this.OutErrorDebug("`n!  Couldn't find selected dropdown item via Name while checking mode or AutomationId mode.")
                             return 0 ; Not known mode
                         }
                     }
@@ -243,15 +249,15 @@ class SnippingToolController {
                     } else if (selectedItem.Name == this.freeformModeElement.Name) {
                         return SnippingToolActions.Freeform ; It's freeform mode
                     } else {
-                        OutputDebug("`nUnknown mode: " selectedItem.Name)
+                        this.OutErrorDebug("`nUnknown mode: " selectedItem.Name)
                         return 0 ; Not known mode
                     }
                 }
             } else {
-                OutputDebug("`n!  Dropdown not found while checking mode.")
+                this.OutErrorDebug("`n!  Dropdown not found while checking mode.")
             }
         } catch as e {
-            OutputDebug("`nError checking video mode: " e.Message "`nAt line: " e.Line)
+            this.OutErrorDebug("`nError checking video mode: " e.Message "`nAt line: " e.Line)
             return 0
         }
 
@@ -264,14 +270,14 @@ class SnippingToolController {
         try {
             ; Check if the element is valid
             if !IsObject(element) {
-                OutputDebug("`nInvalid element passed to InvokeElement.")
+                this.OutErrorDebug("`nInvalid element passed to InvokeElement.")
                 return false
             }
 
             ; Get the main window element
             local MainElement := UIA.ElementFromHandle(initialElementString)
             if !IsObject(MainElement) {
-                OutputDebug("`nFailed to get element.")
+                this.OutErrorDebug("`nFailed to get element.")
                 return false
             }
 
@@ -290,7 +296,7 @@ class SnippingToolController {
                 if (parentSuccess) {
                     OutputDebug("`nParent Element `"" element.ParentElement.Name "`" opened.")
                 } else {
-                    OutputDebug("`nFailed to open parent element `"" element.ParentElement.Name "`". Will keep going.")
+                    this.OutErrorDebug("`nFailed to open parent element `"" element.ParentElement.Name "`". Will keep going.")
                     ; Keep going just in case it somehow still works
                 }
             }
@@ -339,12 +345,12 @@ class SnippingToolController {
                 OutputDebug("`n`"" element.Name "`" invoked successfully.")
                 return true
             } else {
-                OutputDebug("`n`"" element.Name "`" not found.")
+                this.OutErrorDebug("`n`"" element.Name "`" not found.")
                 return false
             }
 
         } catch as e {
-            OutputDebug("`n" element.Name " -- Error invoking element: " e.Message "`nAt line: " e.Line)
+            this.OutErrorDebug("`n" element.Name " -- Error invoking element: " e.Message "`nAt line: " e.Line)
             return false
         }
     }
@@ -400,11 +406,11 @@ class SnippingToolController {
                 OutputDebug("`nSnipping Tool Overlay activated.")
                 return true
             } else {
-                OutputDebug("`nSnipping Tool Overlay did not become active.")
+                this.OutErrorDebug("`nSnipping Tool Overlay did not become active.")
                 return false
             }
         } else {
-            OutputDebug("`nSnipping Tool Overlay not found.")
+            this.OutErrorDebug("`nSnipping Tool Overlay not found.")
         }
 
         return false
@@ -446,14 +452,14 @@ class SnippingToolController {
                             return true
                         } else {
                             ; If it timed out
-                            OutputDebug("`nFailed to activate Snipping Tool Overlay after clicking toast.")
+                            this.OutErrorDebug("`nFailed to activate Snipping Tool Overlay after clicking toast.")
                             this.haveClickedToast := false ; Reset the flag to allow for another click
                             return false
                         }
                     } 
                 }
             } catch as e {
-                OutputDebug("`nError checking for toast: " e.Message "`nAt line: " e.Line)
+                this.OutErrorDebug("`nError checking for toast: " e.Message "`nAt line: " e.Line)
             }
         }
         ; OutputDebug("`nToast not found or button not clickable.")
@@ -486,5 +492,12 @@ class SnippingToolController {
         SetTimer(this.boundCheckToast, IntervalMs)
         ; A timeout timer to cancel the toast check after a certain time if not clicked
         SetTimer(this.boundCancelTimer, (TimeoutSeconds * -1000))
+    }
+
+    static OutErrorDebug(msg) {
+        OutputDebug("`n" msg)
+        if (DebugMode) {
+            MsgBox("`n" msg)
+        }
     }
 }
