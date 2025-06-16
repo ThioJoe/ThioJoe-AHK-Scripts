@@ -4,7 +4,7 @@
 ; Purpose: This script allows you to launch Snipping Tool directly to specific modes.
 ; Author:  ThioJoe
 ; Repo:    https://github.com/ThioJoe/ThioJoe-AHK-Scripts
-; Version: 1.3.0
+; Version: 1.4.0
 ; -----------------------------------------------
 ;
 ; REQUIRED: Set the path to the required UIA.ahk class file. Here it is up one directory then in the Lib folder. If it's in the same folder it would be:  #Include "UIA.ahk"
@@ -17,7 +17,7 @@
 ;       Optional: You can also use the SetSnippingToolMode() function directly if you want to set a specific mode without launching the tool, like if you know it's already open.
 
 ; EXAMPLE USAGE:  "Ctrl + PrintScreen"  to go directly to text extractor mode. You can even uncomment this exact line to use it if you want. Or call the same function from your main script.
-;   ^PrintScreen:: ActivateSnippingToolAction(SnippingToolActions.TextExtractor, true)
+;  ^PrintScreen:: ActivateSnippingToolAction(SnippingToolActions.TextExtractor, true)
 
 ; Optional Parameters:
 ;    Parameter Position 2:  autoClickToast: If set to true, it will automatically click the toast notification that appears after taking a screenshot (within 15 seconds).
@@ -70,6 +70,57 @@ class SnippingToolController {
     static isToastClickTimerRunning := false
     static haveClickedToast := false
 
+    ; For looking up localized strings for different languages
+    static sketchFamilyName := "Microsoft.ScreenSketch_8wekyb3d8bbwe"
+    static SnipOverlayWindowName_resource := "ms-resource://Microsoft.ScreenSketch/Resources/SnipOverlayWindowName" ; "Snipping Tool Overlay"
+    static AppDescription_resource := "ms-resource://Microsoft.ScreenSketch/Resources/AppDescription" ; "Snipping Tool"
+    static MarkupAndShareToast_resource := "ms-resource://Microsoft.ScreenSketch/Resources/MarkupAndShareToast" ; "Markup and Share"
+    static NewNotificationString_resource := "@%SystemRoot%\system32\NotificationController.dll,-100" ; "New notification"
+
+    ; Default resource values
+    static SnipOverlayWindowName := "Snipping Tool Overlay"
+    static AppDescription := "Snipping Tool"
+    static MarkupAndShareToast := "Markup and Share"
+    static NewNotificationString := "New notification"
+
+    ; Try to get the localized strings for the Snipping Tool
+    ; static Init() {
+    static __New() {
+        try {
+            result_overlayName := this.ResolveWindowsResource(this.MakeAppxResourceString(this.sketchFamilyName, this.SnipOverlayWindowName_resource))
+            result_appDescription := this.ResolveWindowsResource(this.MakeAppxResourceString(this.sketchFamilyName, this.AppDescription_resource))
+            result_markupAndShareToast := this.ResolveWindowsResource(this.MakeAppxResourceString(this.sketchFamilyName, this.MarkupAndShareToast_resource))
+            result_newNotificationString := this.ResolveWindowsResource(this.NewNotificationString_resource)
+        } catch as e {
+            OutputDebug("`nError initializing SnippingToolController: " e.Message "`nAt line: " e.Line)
+        }
+
+        ; Set the class variables 
+        if (IsSet(result_overlayName) && result_overlayName != false) {
+            this.SnipOverlayWindowName := result_overlayName
+        } else {
+            OutputDebug("`nFailed to resolve SnipOverlayWindowName. Using default: " this.SnipOverlayWindowName)
+        }
+
+        if (IsSet(result_appDescription) && result_appDescription != false) {
+            this.AppDescription := result_appDescription
+        } else {
+            OutputDebug("`nFailed to resolve AppDescription. Using default: " this.AppDescription)
+        }
+
+        if (IsSet(result_markupAndShareToast) && result_markupAndShareToast != false) {
+            this.MarkupAndShareToast := result_markupAndShareToast
+        } else {
+            OutputDebug("`nFailed to resolve MarkupAndShareToast. Using default: " this.MarkupAndShareToast)
+        }
+
+        if (IsSet(result_newNotificationString) && result_newNotificationString != false) {
+            this.NewNotificationString := result_newNotificationString
+        } else {
+            OutputDebug("`nFailed to resolve NewNotificationString. Using default: " this.NewNotificationString)
+        }
+    }
+
     static ActivateAction(elementEnum, autoClickToast := false) {
         if (elementEnum == SnippingToolActions.Rectangle 
             || elementEnum == SnippingToolActions.Window 
@@ -80,8 +131,12 @@ class SnippingToolController {
             )
         {
             this.ActivateActionDirectly(elementEnum, autoClickToast)
-        } else {
+        } else if (elementEnum == SnippingToolActions.Close) {
             this.ActivateActionWithUIA(elementEnum, autoClickToast)
+        } else {
+            MsgBox("SnippingToolController: Invalid action specified. Please use a valid SnippingToolActions option when calling the ActivateSnippingToolAction() function."
+                . "`n`nExample:`nActivateSnippingToolAction(SnippingToolActions.TextExtractor)"
+            )
         }
     }
 
@@ -124,7 +179,7 @@ class SnippingToolController {
         }
         
         WinWaitActive(this.snipToolString, unset, 2) ; Add a small timeout
-        if !WinActive("Snipping Tool Overlay") {
+        if !WinActive(this.SnipOverlayWindowName) {
             this.OutErrorDebug("`nSnipping Tool Overlay did not become active.")
             return
         }
@@ -148,7 +203,7 @@ class SnippingToolController {
     }
 
     ; Parent Elements
-    static snipToolString := "Snipping Tool Overlay ahk_exe SnippingTool.exe"
+    static snipToolString := this.SnipOverlayWindowName " ahk_exe SnippingTool.exe"
     static dropDownString := "PopupHost ahk_exe SnippingTool.exe" ; A new window is created for the dropdown
 
     ; snippingOverlayElement   := SnipToolbarUIA("Snipping Tool Overlay"      , "YR/80", ""                            , "Window")
@@ -398,11 +453,11 @@ class SnippingToolController {
 
     ; Wait for the snipping tool window to exist and activate it and bring to front
     static WaitAndActivateSnipWindow() {
-        local snipWindow := WinWait("Snipping Tool ahk_exe SnippingTool.exe", unset, 3) ; Waits for the window to exist, with a timeout
+        local snipWindow := WinWait(this.AppDescription " ahk_exe SnippingTool.exe", unset, 3) ; Waits for the window to exist, with a timeout
         if (snipWindow) {
             WinActivate(snipWindow)
             WinWaitActive(snipWindow, unset, 0.5) ; Wait for the window to be active. Should be instant but just in case
-            if (WinActive("Snipping Tool ahk_exe SnippingTool.exe")) {
+            if (WinActive(this.AppDescription " ahk_exe SnippingTool.exe")) {
                 OutputDebug("`nSnipping Tool Overlay activated.")
                 return true
             } else {
@@ -439,7 +494,7 @@ class SnippingToolController {
                         button := MainElement.FindFirst(Condition, UIA.TreeScope.Subtree)
                     }
 
-                    if (isObject(button) && button.Name == "Markup and share")
+                    if (isObject(button) && button.Name == this.MarkupAndShareToast)
                     {
                         Sleep(250) ; Wait for the button to be ready. Even when not automating, the button is not clickable immediately.
                         button.Click()
@@ -499,5 +554,106 @@ class SnippingToolController {
         if (DebugMode) {
             MsgBox("`n" msg)
         }
+    }
+
+    /**
+     * Resolves an ms-resource URI for a given AppX package using SHLoadIndirectString.
+     * @param packageFamilyName The package family name (e.g., "Microsoft.ScreenSketch_8wekyb3d8bbwe").
+     * @param ResourceUri The full ms-resource URI, such a "ms-resource://Microsoft.ScreenSketch/Resources/MarkupAndShareToast" 
+     * @returns The cosntructed string that SHLoadIndirectString understands.
+     */
+    static MakeAppxResourceString(packageFamilyName, resourceUri) {
+        PackageFullName := this.GetPackageFullName(packageFamilyName)
+        ; Construct the special "indirect string" that SHLoadIndirectString understands.
+        indirectString := "@{" . PackageFullName . "?" . ResourceUri . "}"
+        return indirectString
+    }
+
+    /**
+     * Resolves a windows localized (multilanguage) resource string using SHLoadIndirectString API.
+     * @param indirectString The indirect string to resolve, formatted as "@{PackageFullName?ms-resource-uri}" or "@%SystemRoot%\system32\shell32.dll,-100".
+     * @returns The resolved string if successful, or an error message if not.
+     */
+    static ResolveWindowsResource(indirectString) {
+        ; Prepare a buffer to receive the output string.
+        outputBuffer := Buffer(4096 * 2, 0)
+
+        ; Call the SHLoadIndirectString function from shlwapi.dll.
+        hResult := DllCall("shlwapi\SHLoadIndirectString", "WStr", indirectString, "Ptr", outputBuffer, "UInt", outputBuffer.Size // 2, "Ptr", 0)
+
+        ; Check the result.
+        if (hResult = 0) {
+            return StrGet(outputBuffer, "UTF-16")
+        } else {
+            OutputDebug("`nError: Failed to load indirect string. HRESULT: " . Format("0x{:X}", hResult))
+            return false
+        }
+    }
+
+    /**
+     * Gets the first full package name for a given package family name.
+     * @param PackageFamilyName The package family name (e.g., "Microsoft.ScreenSketch_8wekyb3d8bbwe").
+     * @returns The full package name string, or 'false' if not found or an error occurs.
+     */
+    static GetPackageFullName(PackageFamilyName) {
+        ; Constants needed for the API call
+        PACKAGE_FILTER_HEAD := 0x00000010
+        ERROR_SUCCESS := 0
+        ERROR_INSUFFICIENT_BUFFER := 122
+
+        ; First DllCall: Get the required buffer size and number of packages.
+        ; We pass 0 for the buffer pointers to signal that we are querying for size.
+        hResult := DllCall("kernel32\FindPackagesByPackageFamily",
+            "WStr", PackageFamilyName,
+            "UInt", PACKAGE_FILTER_HEAD,
+            "UIntP", &count := 0,      ; Output: number of packages found
+            "Ptr", 0,
+            "UIntP", &bufferLen := 0,  ; Output: required buffer length
+            "Ptr", 0,
+            "Ptr", 0)
+
+        ; The first call is successful if it returns ERROR_SUCCESS (no packages found)
+        ; or ERROR_INSUFFICIENT_BUFFER (packages found, sizes returned).
+        if (hResult != ERROR_SUCCESS && hResult != ERROR_INSUFFICIENT_BUFFER) {
+            OutputDebug("`nError: Could not query for package size. Code: " . hResult)
+            return false
+        }
+
+        ; If no packages were found, we can exit now.
+        if (count = 0) {
+            OutputDebug("`nError: No packages found for family name '" . PackageFamilyName . "'")
+            return false
+        }
+
+        ; Allocate buffers with the sizes we just retrieved.
+        fullNamesBuffer := Buffer(A_PtrSize * count)
+        stringBuffer := Buffer(bufferLen * 2) ; WCHARs are 2 bytes
+
+        ; Second DllCall: Get the actual package names.
+        hResult := DllCall("kernel32\FindPackagesByPackageFamily",
+            "WStr", PackageFamilyName,
+            "UInt", PACKAGE_FILTER_HEAD,
+            "UIntP", &count,
+            "Ptr", fullNamesBuffer.Ptr, ; Pointer to an array of string pointers
+            "UIntP", &bufferLen,
+            "Ptr", stringBuffer.Ptr,    ; Pointer to the buffer for the strings themselves
+            "Ptr", 0)
+
+        ; Check the result. ERROR_SUCCESS is 0.
+        if (hResult != ERROR_SUCCESS) {
+            OutputDebug("`nError: Could not retrieve package names. Code: " . hResult)
+            return false
+        }
+
+        ; If we found at least one package, retrieve the first full name.
+        if (count > 0) {
+            ; The fullNamesBuffer now contains an array of pointers. Get the first pointer.
+            firstPtr := NumGet(fullNamesBuffer, 0, "Ptr")
+            ; Convert that pointer to a string.
+            return StrGet(firstPtr)
+        }
+
+        OutputDebug("`nError: No packages found for family name '" . PackageFamilyName . "'")
+        return false
     }
 }
