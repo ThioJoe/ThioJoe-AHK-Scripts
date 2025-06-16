@@ -440,6 +440,123 @@ RemoveToolTip(delayMs := 0) {
     }
 }
 
+/**
+ * Resolves an ms-resource URI for a given AppX package using SHLoadIndirectString.
+ * @param packageFamilyName The package family name (e.g., "Microsoft.ScreenSketch_8wekyb3d8bbwe").
+ * @param ResourceUri The full ms-resource URI, such a "ms-resource://Microsoft.ScreenSketch/Resources/MarkupAndShareToast" 
+ * @returns The cosntructed string that SHLoadIndirectString understands.
+ */
+MakeAppxResourceString(packageFamilyName, resourceUri) {
+    PackageFullName := GetAppxPackageFullName(packageFamilyName)
+    ; Construct the special "indirect string" that SHLoadIndirectString understands.
+    indirectString := "@{" . PackageFullName . "?" . ResourceUri . "}"
+    return indirectString
+}
+
+/**
+ * Resolves an ms-resource URI for a given AppX package using SHLoadIndirectString.
+ * @param dllname The name or path of the DLL (e.g., "NotificationController.dll" or "%SystemRoot%\system32\shell32.dll")
+ * @param resourceId The resource ID of the string resource, as a string. Usually this is a number with a negative sign (e.g., "-100").
+ * @returns The constructed string that SHLoadIndirectString understands.
+ */
+MakeDllResourceString(dllname, resourceId) {
+    ; If it already contains slashes, assume it's a full path, so don't prepend the system path.
+    if (InStr(dllname, "\") = 0) {
+        dllname := "%SystemRoot%\system32\" . dllname
+    }
+    ; Construct the special "indirect string" that SHLoadIndirectString understands.
+    indirectString := "@" . dllname . "," . resourceId
+    return indirectString
+}
+
+/**
+ * Resolves a windows localized (multilanguage) resource string using SHLoadIndirectString API.
+ * @param indirectString The indirect string to resolve, formatted as "@{PackageFullName?ms-resource-uri}" or "@%SystemRoot%\system32\shell32.dll,-100".
+ * @returns The resolved string if successful, or an error message if not.
+ */
+ResolveWindowsResource(indirectString) {
+    ; Prepare a buffer to receive the output string.
+    outputBuffer := Buffer(4096 * 2, 0)
+
+    ; Call the SHLoadIndirectString function from shlwapi.dll.
+    hResult := DllCall("shlwapi\SHLoadIndirectString", "WStr", indirectString, "Ptr", outputBuffer, "UInt", outputBuffer.Size // 2, "Ptr", 0)
+
+    ; Check the result.
+    if (hResult = 0) {
+        return StrGet(outputBuffer, "UTF-16")
+    } else {
+        OutputDebug("`nError: Failed to load indirect string. HRESULT: " . Format("0x{:X}", hResult))
+        return false
+    }
+}
+
+/**
+ * Gets the first full package name for a given package family name.
+ * @param PackageFamilyName The package family name (e.g., "Microsoft.ScreenSketch_8wekyb3d8bbwe").
+ * @returns The full package name string, or 'false' if not found or an error occurs.
+ */
+GetAppxPackageFullName(PackageFamilyName) {
+    ; Constants needed for the API call
+    PACKAGE_FILTER_HEAD := 0x00000010
+    ERROR_SUCCESS := 0
+    ERROR_INSUFFICIENT_BUFFER := 122
+
+    ; First DllCall: Get the required buffer size and number of packages.
+    ; We pass 0 for the buffer pointers to signal that we are querying for size.
+    hResult := DllCall("kernel32\FindPackagesByPackageFamily",
+        "WStr", PackageFamilyName,
+        "UInt", PACKAGE_FILTER_HEAD,
+        "UIntP", &count := 0,      ; Output: number of packages found
+        "Ptr", 0,
+        "UIntP", &bufferLen := 0,  ; Output: required buffer length
+        "Ptr", 0,
+        "Ptr", 0)
+
+    ; The first call is successful if it returns ERROR_SUCCESS (no packages found)
+    ; or ERROR_INSUFFICIENT_BUFFER (packages found, sizes returned).
+    if (hResult != ERROR_SUCCESS && hResult != ERROR_INSUFFICIENT_BUFFER) {
+        OutputDebug("`nError: Could not query for package size. Code: " . hResult)
+        return false
+    }
+
+    ; If no packages were found, we can exit now.
+    if (count = 0) {
+        OutputDebug("`nError: No packages found for family name '" . PackageFamilyName . "'")
+        return false
+    }
+
+    ; Allocate buffers with the sizes we just retrieved.
+    fullNamesBuffer := Buffer(A_PtrSize * count)
+    stringBuffer := Buffer(bufferLen * 2) ; WCHARs are 2 bytes
+
+    ; Second DllCall: Get the actual package names.
+    hResult := DllCall("kernel32\FindPackagesByPackageFamily",
+        "WStr", PackageFamilyName,
+        "UInt", PACKAGE_FILTER_HEAD,
+        "UIntP", &count,
+        "Ptr", fullNamesBuffer.Ptr, ; Pointer to an array of string pointers
+        "UIntP", &bufferLen,
+        "Ptr", stringBuffer.Ptr,    ; Pointer to the buffer for the strings themselves
+        "Ptr", 0)
+
+    ; Check the result. ERROR_SUCCESS is 0.
+    if (hResult != ERROR_SUCCESS) {
+        OutputDebug("`nError: Could not retrieve package names. Code: " . hResult)
+        return false
+    }
+
+    ; If we found at least one package, retrieve the first full name.
+    if (count > 0) {
+        ; The fullNamesBuffer now contains an array of pointers. Get the first pointer.
+        firstPtr := NumGet(fullNamesBuffer, 0, "Ptr")
+        ; Convert that pointer to a string.
+        return StrGet(firstPtr)
+    }
+
+    OutputDebug("`nError: No packages found for family name '" . PackageFamilyName . "'")
+    return false
+}
+
 ; ------------------------- High precision timer functions --------------------
 ; Note: Using these as function calls will add significant overhead if measuring small time intervals (Under ~0.1 ms)
 StartTimer() {
