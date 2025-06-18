@@ -24,7 +24,7 @@ SetWorkingDir(A_ScriptDir)
 
 ; Set global variables about the program and compiler directives. These use regex to extract data from the lines above them (A_PriorLine)
 ; Keep the line pairs together!
-global g_pathSelector_version := "1.4.0.0-Beta"
+global g_pathSelector_version := "1.4.0.0"
 ;@Ahk2Exe-Let ProgramVersion=%A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 global g_pathSelector_programName := "Explorer Dialog Path Selector"
@@ -56,6 +56,16 @@ class ExplorerDialogPathSelector {
     g_pth_SettingsFile := {}
     ; Create property to map to the DefaultSettingsClass class, to be able to use "this.DefaultSettings", because otherwise nested classes need to be referenced with the entire parent class name apparently
     DefaultSettings := ExplorerDialogPathSelector.Settings()
+    ; Dictionary to hold localized strings. Defaults to English initially for clarity here but will be loaded during initialization
+    localstr := {
+        isEnglish: true,
+        addressBar: "Address: ",
+        thisPC: "This PC",
+        computer: "Computer",
+        myComputer: "My Computer",
+        desktop: "Desktop",
+        addressBarKey: "d" ; The 'Alt' key to focus the address bar in Explorer dialogs. May be different in other languages so need to get that too
+    }
 
     ; Need to bind certain function objects that are used in callbacks
     ; Used for the hotkey to show the menu
@@ -65,6 +75,9 @@ class ExplorerDialogPathSelector {
 
     ; Constructor
     __New(settingsObject :=  ExplorerDialogPathSelector.Settings(), systemTraySettingsObject := ExplorerDialogPathSelector.SystemTraySettings(), dontLoadSettingsFile := false, setAsMainInstance := unset) {
+        ; Assign the localized strings needed for the script
+        this.GetNecessaryLocalizedStrings()
+
         ; ------------------- Validate the parameters -------------------
         if (systemTraySettingsObject.base.__Class != ExplorerDialogPathSelector.SystemTraySettings.prototype.__Class) {
             MsgBox("Invalid object type was used for Explorer Dialog Path Selector system tray settings. Must be type: ExplorerDialogPathSelector.SystemTraySettings . `n`n Using default settings instead.")
@@ -237,6 +250,42 @@ class ExplorerDialogPathSelector {
         }
     }
 
+    ; Loads Windows resources to get localized versions of strings that are used to locate dialogs and their controls
+    GetNecessaryLocalizedStrings() {
+        ; Resource string addresses
+        addressbarRes := "@%SystemRoot%\system32\explorerframe.dll,-13829" ; "Address: %s" (Need to remove the %s part)
+        addressbarKeyStrRes := "@%SystemRoot%\system32\explorerframe.dll,-12896" ; "A&ddress" (Need to get the character after the &). NOT resource 13137
+        thisPCRes := "@%SystemRoot%\system32\shell32.dll,-30621" ; "This PC"
+        computerRes := "@%SystemRoot%\system32\shell32.dll,-30480" ; "Computer"
+        myComputerRes := "@%SystemRoot%\system32\shell32.dll,-9012" ; "My Computer"
+        desktopRes := "@%SystemRoot%\system32\shell32.dll,-4162" ; "Desktop"
+
+        ; Ones that need further processing
+        addressBarRaw := this.ResolveWindowsResource(addressbarRes)
+        addressbarKeyStrRaw := this.ResolveWindowsResource(addressbarKeyStrRes)
+        thisPCResRaw := this.ResolveWindowsResource(thisPCRes)
+        computerResRaw := this.ResolveWindowsResource(computerRes)
+        myComputerResRaw := this.ResolveWindowsResource(myComputerRes)
+        desktopResRaw := this.ResolveWindowsResource(desktopRes)
+
+        ; If the result isn't false, we can set the string
+        if (addressBarRaw)
+            this.localstr.addressBar := StrReplace(addressBarRaw, "%s", "")
+        if (addressbarKeyStrRaw)
+            this.localstr.addressBarKey := SubStr(addressbarKeyStrRaw, InStr(addressbarKeyStrRaw, "&") + 1, 1)
+        if (thisPCResRaw)
+            this.localstr.thisPC := thisPCResRaw
+        if (computerResRaw)
+            this.localstr.computer := computerResRaw
+        if (myComputerResRaw)
+            this.localstr.myComputer := myComputerResRaw
+        if (desktopResRaw)
+            this.localstr.desktop := desktopResRaw
+
+        ; If the system language is not English, set isEnglish to false
+            this.localstr.isEnglish := this.IsSystemLanguageEnglish()
+    }
+
     ; Stores info about the settings file - Using a class instead of object so that we can dynamically set certain properties based on the file name and folder name
     class SettingsFile {
         ; Explicitly declare these properties as static because there should really only be one instance of it
@@ -300,6 +349,130 @@ class ExplorerDialogPathSelector {
     ; Check for match using strings with wildcard asterisks
     StringMatchWithWildcards(str, matchStr) {
         return RegExMatch(str, "i)^" RegExReplace(matchStr, "\*", ".*") "$")
+    }
+
+    ; Check with the windows API which language the system is using
+    IsSystemLanguageEnglish() {
+        local lang := A_Language
+        ; If it's not english we need to use the localized strings
+        if (lang != "1033") { ; 1033 is the LCID for English (United States)
+            return false
+        } else {
+            return true
+        }
+    }
+
+    /**
+     * Resolves a windows localized (multilanguage) resource string using SHLoadIndirectString API.
+     * @param indirectString The indirect string to resolve, formatted as "@{PackageFullName?ms-resource-uri}" or "@%SystemRoot%\system32\shell32.dll,-100".
+     * @returns The resolved string if successful, or an error message if not.
+     */
+    ResolveWindowsResource(indirectString) {
+        try {
+            ; Prepare a buffer to receive the output string.
+            outputBuffer := Buffer(4096 * 2, 0)
+
+            ; Call the SHLoadIndirectString function from shlwapi.dll.
+            hResult := DllCall("shlwapi\SHLoadIndirectString", "WStr", indirectString, "Ptr", outputBuffer, "UInt", outputBuffer.Size // 2, "Ptr", 0)
+
+            ; Check the result.
+            if (hResult = 0) {
+                return StrGet(outputBuffer, "UTF-16")
+            } else {
+                OutputDebug("`nError: Failed to load indirect string. HRESULT: " . Format("0x{:X}", hResult))
+                return false
+            }
+        } catch as err {
+            OutputDebug("`nError: " err.Message "`n`nFailed to resolve resource string: " indirectString)
+            return false
+        }
+    }
+
+    GetLocalizedPathParts(pathPartsList) {
+        truePath := "" ; The true path to be built progressively and used in the lookups
+        isFirstPart := true
+        displayPathPartsList := [] ; Initialize an empty list to hold the display parts
+
+        ; Progressively build the display path by resolving each part
+        for part in pathPartsList {
+            if (part = "") {
+                continue ; Skip empty parts (like leading backslash)
+            }
+
+            if (truePath != "" && !isFirstPart) {
+                truePath .= "\"
+            }
+
+            ; displayPath .= GetFolderDisplayName(displayPath . "\" . part) ; Get the display name for the current part
+            newPart := this.GetFolderDisplayName(truePath . part) ; Get the display name for the current part
+
+            if (newPart) {
+                displayPathPartsList.Push(newPart) ; Add the display name to the list
+                truePath .= part ; Append the original part to the true path
+            } else {
+                ; If we can't get the display name, use the original part
+                displayPathPartsList.Push(part) ; Add the original part to the list
+                truePath .= part
+            }
+
+            if (isFirstPart)
+                isFirstPart := false
+        }
+
+        return displayPathPartsList ; Return the list of display names
+    }
+
+    /**
+     * Gets the localized display name of a file or folder. It only gets the name of the last part of the path, not the full path.
+     * This uses the SHGetFileInfoW function to get the name as it appears in Windows Explorer.
+     * @param path {String} The full path to the file or folder.
+     * @returns {String|Boolean} The display name on success, or `false` on failure.
+     */
+    GetFolderDisplayName(path) {
+        try {
+            ; --- Define constants for SHGetFileInfoW ---
+            local SHGFI_DISPLAYNAME := 0x200 ; Flag to retrieve the display name.
+            local MAX_PATH := 260            ; The maximum length for the szDisplayName field.
+
+            ; --- Prepare the SHFILEINFOW structure ---
+            ; The structure has the following members in order:
+            ; HICON hIcon          (Ptr size)
+            ; int   iIcon          (4 bytes)
+            ; DWORD dwAttributes   (4 bytes)
+            ; WCHAR szDisplayName[MAX_PATH] (260 * 2 bytes)
+            ; WCHAR szTypeName[80] (80 * 2 bytes)
+            local shfi_size := A_PtrSize + 4 + 4 + (MAX_PATH * 2) + (80 * 2)
+            local shfi := Buffer(shfi_size, 0)
+
+            ; --- Call the SHGetFileInfoW function ---
+            ; For more info, see: https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shgetfileinfow
+            local hResult := DllCall("shell32\SHGetFileInfoW",
+                "WStr", path,       ; [in] LPCWSTR pszPath
+                "UInt", 0,          ; [in] DWORD dwFileAttributes
+                "Ptr", shfi,       ; [out] SHFILEINFOW *psfi
+                "UInt", shfi.Size,  ; [in] UINT cbFileInfo
+                "UInt", SHGFI_DISPLAYNAME) ; [in] UINT uFlags
+
+            ; Check if the function call was successful. A non-zero return value indicates success.
+            if (hResult != 0) {
+                ; --- Extract the display name from the structure ---
+                ; The display name is not at the start of the buffer. We need to calculate its offset.
+                ; Offset = size of hIcon + size of iIcon + size of dwAttributes
+                local displayNameOffset := A_PtrSize + 4 + 4
+
+                ; Retrieve the null-terminated UTF-16 string from the calculated offset.
+                local displayName := StrGet(shfi.Ptr + displayNameOffset, "UTF-16")
+                return displayName
+            } else {
+                ; The function call failed.
+                OutputDebug("`nError: SHGetFileInfoW failed for path: " path)
+                return false
+            }
+        } catch as err {
+            ; Catch any other errors that might occur.
+            OutputDebug("`nError: " err.Message "`n`nFailed to get display name for path: " path)
+            return false
+        }
     }
 
     ; Sets the theme of menus by the process - Adapted from https://www.autohotkey.com/boards/viewtopic.php?style=19&f=82&t=133886#p588184
@@ -495,7 +668,7 @@ class ExplorerDialogPathSelector {
             for controlClassNN in controls {
                 if (controlClassNN ~= "ToolbarWindow32") {
                     controlText := ControlGetText(controlClassNN, windowHwnd)
-                    if (controlText ~= "Address: ") {
+                    if (controlText ~= this.localstr.addressBar) {
                         ; Get the path from the address bar
                         return SubStr(controlText, 10)
                     }
@@ -969,7 +1142,7 @@ class ExplorerDialogPathSelector {
             }
 
             ; Move focus to Address Bar
-            Send("!{d}") ; For some reason doesn't seem to work sending to the window
+            Send("!{" this.localstr.addressBarKey "}") ; For some reason doesn't seem to work sending to the window. So use Alt + D to focus the address bar (or whatever language key)
             Sleep(50)
             CheckAddressbarReadyAndNavigate()
 
@@ -986,7 +1159,7 @@ class ExplorerDialogPathSelector {
             for controlClassNN in controls {
                 if (controlClassNN ~= "ToolbarWindow32") {
                     controlText := ControlGetText(controlClassNN, windowHwnd)
-                    if (controlText ~= "Address: ") {
+                    if (controlText ~= this.localstr.addressBar) { ; Look for "Address: " or language specific equivalent
                         controlHwnd := ControlGetHwnd(controlClassNN, windowHwnd)
                         return controlHwnd
                     }
@@ -1120,6 +1293,11 @@ class ExplorerDialogPathSelector {
 
         ; Split the path into components
         pathComponents := StrSplit(path, "\")
+        ; If it's not english get the localized versions of path parts
+        if (!this.localstr.isEnglish) {
+            pathComponents := this.GetLocalizedPathParts(pathComponents)
+        }
+
         ; Remove empty components caused by leading backslashes
         while (pathComponents.Length > 0 && pathComponents[1] = "") {
             pathComponents.RemoveAt(1)
@@ -1134,7 +1312,7 @@ class ExplorerDialogPathSelector {
         }
 
         ; Start from the "This PC" node (adjust for different Windows versions)
-        startingNodes := ["This PC", "Computer", "My Computer", "Desktop"]
+        startingNodes := [this.localstr.thisPC, this.localstr.computer, this.localstr.myComputer, this.localstr.desktop]
         for name in startingNodes {
             if (hItem := myTreeView.GetHandleByText(name)) {
                 break

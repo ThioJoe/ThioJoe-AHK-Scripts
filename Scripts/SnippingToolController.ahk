@@ -119,6 +119,16 @@ class SnippingToolController {
         } else {
             OutputDebug("`nFailed to resolve NewNotificationString. Using default: " this.NewNotificationString)
         }
+
+        ; If using debug mode, output the resolved strings
+        if (DebugMode) {
+            MsgBox("`nSnippingToolController initialized with the following values:`n"
+                . "SnipOverlayWindowName: " this.SnipOverlayWindowName "`n"
+                . "AppDescription: " this.AppDescription "`n"
+                . "MarkupAndShareToast: " this.MarkupAndShareToast "`n"
+                . "NewNotificationString: " this.NewNotificationString
+            )
+        }
     }
 
     static ActivateAction(elementEnum, autoClickToast := false) {
