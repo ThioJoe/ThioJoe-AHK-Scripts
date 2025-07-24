@@ -359,6 +359,27 @@ LaunchProgramAtMouse(programTitle, xOffset := 0, yOffset := 0, exePath := "", fo
     CoordMode("Mouse", originalMouseMode)
 }
 
+; Just checks if a particular clipboard format is currently on the clipboard or not
+CheckForClipboardFormat(formatName := "", formatIDInput := unset) {
+    formatId := -1
+
+    if IsSet(formatIDInput) {
+        formatId := formatIDInput
+    } else if IsSet(formatName) {
+        formatId := DllCall("RegisterClipboardFormat", "Str", formatName, "UInt")
+        if !formatId
+            Throw("Failed to register clipboard format: " formatName)
+    } else {
+        Throw("Error in Checking clipboard format: No format name or ID provided.")
+    }
+
+    if (formatId > 0) {
+        return DllCall("IsClipboardFormatAvailable", "UInt", formatId, "UInt") ; Returns windows bool (0 or 1)
+    } else {
+        return false
+    }   
+}
+
 ; Gets the raw bytes data of a specific clipboard format, given the format's name string or ID number
 GetClipboardFormatRawData(formatName := "", formatIDInput := unset) {
     if IsSet(formatIDInput) {
