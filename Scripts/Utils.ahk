@@ -2,13 +2,14 @@
 
 ; Various utility functions. This script doesn't run anything by itself, but is meant to be included in other scripts
 
+class ThioUtils {
 ; -------------------------------------------------------------------------------
 
 ; Gets all the controls of a window as objects from the Windows API, given the window's HWND
 ; Can be used as a replacement for WinGetControls() which only returns control names, this way you can get the names and HWNDs in one go
 ;    Return Type: Array of control objects with properties: Class (String), ClassNN (String), ControlID (Int), Hwnd (Int / Pointer)
 ;    Optional Parameter: getText (Bool) - If true, will also get the text of each control and put it into a Text property
-GetAllControlsAsObjects_ViaWindowsAPI(windowHwnd, getText:=unset) {
+static GetAllControlsAsObjects_ViaWindowsAPI(windowHwnd, getText:=unset) {
     ; ---------------- Local Functions ----------------
     EnumChildProc(hwnd, lParam) {
         controlsArray := ObjFromPtrAddRef(lParam)
@@ -55,7 +56,7 @@ GetAllControlsAsObjects_ViaWindowsAPI(windowHwnd, getText:=unset) {
 
 ; Checks if a window has a control with a specific class name. Allows wildcards in the form of an asterisk (*), otherwise exact matching is done
 ;    Return Type: Bool (True/False)
-CheckWindowHasControlName(hwnd, pattern) {
+static CheckWindowHasControlName(hwnd, pattern) {
     try {
         controlsObj := WinGetControls("ahk_id " hwnd)
         
@@ -80,7 +81,7 @@ CheckWindowHasControlName(hwnd, pattern) {
 
 ; Shows a dialog box to enter a directory path and validates it
 ;    Return Type: String (Path) or empty string if cancelled or invalid
-ShowDirectoryPathEntryBox() {
+static ShowDirectoryPathEntryBox() {
     path := InputBox("Enter a path to navigate to", "Path", "w300 h100")
     
     ; Check if user cancelled the InputBox
@@ -105,20 +106,20 @@ ShowDirectoryPathEntryBox() {
 }
 
 ; Get the handle of the window under the mouse cursor
-GetWindowHwndUnderMouse() {
+static GetWindowHwndUnderMouse() {
     MouseGetPos(unset, unset, &WindowhwndOut)
     ;MsgBox("Window Hwnd: " Windowhwnd)
     return WindowhwndOut
 }
 
 ; Get the class name of the control under the mouse cursor
-GetControlClassUnderMouse() {
+static GetControlClassUnderMouse() {
     MouseGetPos(unset, unset, unset, &classNN)
     return classNN
 }
 
 ; Get the Handle/Hwnd of the specific control under the mouse cursor (not the window's handle)
-GetControlUnderMouseHandleID() {
+static GetControlUnderMouseHandleID() {
     MouseGetPos(unset, unset, unset, &controlHandleID, 2) ; If controlHandleID is not provided, it will be an empty string
     return controlHandleID
 }
@@ -126,7 +127,7 @@ GetControlUnderMouseHandleID() {
 ; Sets the theme of menus by the process - Adapted from https://www.autohotkey.com/boards/viewtopic.php?style=19&f=82&t=133886#p588184
 ; Usage: Put this before creating any menus. AllowDark will folow system theme. Seems that once set, the app must restart to change it.
 ;SetMenuTheme("AllowDark")
-SetContextMenuTheme(appMode:=0) {
+static SetContextMenuTheme(appMode:=0) {
     static preferredAppMode       :=  {Default:0, AllowDark:1, ForceDark:2, ForceLight:3, Max:4}
     static uxtheme                :=  dllCall("Kernel32.dll\GetModuleHandle", "Str", "uxtheme", "Ptr")
 
@@ -152,7 +153,7 @@ SetContextMenuTheme(appMode:=0) {
 ; Uses Windows API SendMessage to directly send a mouse wheel movement message to a window, instead of using multiple wheel scroll events
 ;     > This is useful for apps that ignore the Windows scroll speed / scroll line amount settings
 ; Use positive multiplier for scrolling up and negative for scrolling down. The handle ID can be either for the window or a control inside it
-MouseScrollMultiplied(multiplier, forceWindowHandle:=false, targetHandleID:=unset, mousePosX:=unset, mousePosY:=unset) {
+static MouseScrollMultiplied(multiplier, forceWindowHandle:=false, targetHandleID:=unset, mousePosX:=unset, mousePosY:=unset) {
     ; Gets the mouse position and handles under the mouse if not provided
     if !IsSet(targetHandleID) or !IsSet(mousePosX) or !IsSet(mousePosY) {
         MouseGetPos(&mousePosX, &mousePosY, &windowHandleID, &controlHandleID, 2) ; If controlHandleID is not provided, it will be an empty string
@@ -183,7 +184,7 @@ MouseScrollMultiplied(multiplier, forceWindowHandle:=false, targetHandleID:=unse
 
 ; Check if mouse is over a specific window and control. Allows for wildcards in the control name
 ; Example:          #HotIf mouseOver("ahk_exe dopus.exe", "dopus.tabctrl1")
-CheckMouseOverControlAndWindow(winTitle, ctl := '') {
+static CheckMouseOverControlAndWindow(winTitle, ctl := '') {
     MouseGetPos(unset, unset, &hWnd, &classNN)
     if classNN = "" {
         return false
@@ -207,7 +208,7 @@ CheckMouseOverControlAndWindow(winTitle, ctl := '') {
 }
 
 ; Optimized version for exact control matches:
-CheckMouseOverControlAndWindowExact(winTitle, ctl) {
+static CheckMouseOverControlAndWindowExact(winTitle, ctl) {
     MouseGetPos(unset, unset, &hWnd, &classNN)
     if classNN = "" {
         return false
@@ -216,7 +217,7 @@ CheckMouseOverControlAndWindowExact(winTitle, ctl) {
     return WinExist(winTitle " ahk_id" hWnd) && (ctl = classNN)
 }
 
-CheckMouseOverControl(ctl){
+static CheckMouseOverControl(ctl){
     MouseGetPos(unset, unset, unset, &classNN)
     if classNN = "" {
         return false
@@ -232,13 +233,13 @@ CheckMouseOverControl(ctl){
         return false
 }
 
-CheckMouseOverControlExact(ctl){
+static CheckMouseOverControlExact(ctl){
     MouseGetPos(unset, unset, unset, &classNN)
     return (ctl = classNN)
 }
 
 ; Check if mouse is over a specific window and control (allows wildcards), with additional parameters for various properties of the control
-CheckMouseOverControlAdvanced(winTitle, ctl := '', ctlMinWidth := 0) {
+static CheckMouseOverControlAdvanced(winTitle, ctl := '', ctlMinWidth := 0) {
     ; ------ Local Functions ------
     checkWidth(ctrlToCheck, winHwnd, ctlMinWidth) {
         if ctlMinWidth = 0
@@ -283,13 +284,13 @@ CheckMouseOverControlAdvanced(winTitle, ctl := '', ctlMinWidth := 0) {
 
 ; Check if mouse is over a specific window by program name (even if not focused)
 ; Example:          #HotIf mouseOverProgram("ahk_exe notepad.exe")
-CheckMouseOverProgram(programTitle) {
+static CheckMouseOverProgram(programTitle) {
     MouseGetPos(unset, unset, &hWnd)
     Return WinExist(programTitle " ahk_id" hWnd)
 }
 
 ; Example: CheckMouseOverSpecificWindowClass("#32770")
-CheckMouseOverSpecificWindowClass(classNNCheck) {
+static CheckMouseOverSpecificWindowClass(classNNCheck) {
     MouseGetPos(unset, unset, &hWnd)
     ; Get the classNN of the window
     windowClass := WinGetClass("ahk_id " hWnd)
@@ -299,7 +300,7 @@ CheckMouseOverSpecificWindowClass(classNNCheck) {
 
 ; Launch any program and move it to the mouse position, with parameters for relative offset vs mouse position
 ; Optionally, you can provide the path to the executable to launch (which may be faster, and should be more reliable), otherwise it will use the program title
-LaunchProgramAtMouse(programTitle, xOffset := 0, yOffset := 0, exePath := "", forceWinActivate := false, sizeX:=0, sizeY:=0) {
+static LaunchProgramAtMouse(programTitle, xOffset := 0, yOffset := 0, exePath := "", forceWinActivate := false, sizeX:=0, sizeY:=0) {
     ; Store original settings to restore later
     originalMouseMode := A_CoordModeMouse
     originalWinDelay := A_WinDelay
@@ -360,7 +361,7 @@ LaunchProgramAtMouse(programTitle, xOffset := 0, yOffset := 0, exePath := "", fo
 }
 
 ; Just checks if a particular clipboard format is currently on the clipboard or not
-CheckForClipboardFormat(formatName := "", formatIDInput := unset) {
+static CheckForClipboardFormat(formatName := "", formatIDInput := unset) {
     formatId := -1
 
     if IsSet(formatIDInput) {
@@ -381,7 +382,7 @@ CheckForClipboardFormat(formatName := "", formatIDInput := unset) {
 }
 
 ; Gets the raw bytes data of a specific clipboard format, given the format's name string or ID number
-GetClipboardFormatRawData(formatName := "", formatIDInput := unset) {
+static GetClipboardFormatRawData(formatName := "", formatIDInput := unset) {
     if IsSet(formatIDInput) {
         formatId := formatIDInput
     } else if IsSet(formatName) {
@@ -438,17 +439,17 @@ GetClipboardFormatRawData(formatName := "", formatIDInput := unset) {
     return []  ; Format not found
 }
 
-TooltipWithDelayedRemove(text, delayMs, x := unset, y := unset) {
+static TooltipWithDelayedRemove(text, delayMs, x := unset, y := unset) {
     if (IsSet(x) && IsSet(y)) {
         ToolTip(text, x, y)
     } else {
         ToolTip(text)
     }
     
-    RemoveToolTip(delayMs)
+    this.RemoveToolTip(delayMs)
 }
 
-RemoveToolTip(delayMs := 0) {
+static RemoveToolTip(delayMs := 0) {
     ; Local function to use in the timer callback
     SetNoTooltip() {
         ToolTip()  ; Calling ToolTip with no parameters removes it
@@ -467,8 +468,8 @@ RemoveToolTip(delayMs := 0) {
  * @param ResourceUri The full ms-resource URI, such a "ms-resource://Microsoft.ScreenSketch/Resources/MarkupAndShareToast" 
  * @returns The cosntructed string that SHLoadIndirectString understands.
  */
-MakeAppxResourceString(packageFamilyName, resourceUri) {
-    PackageFullName := GetAppxPackageFullName(packageFamilyName)
+static MakeAppxResourceString(packageFamilyName, resourceUri) {
+    PackageFullName := this.GetAppxPackageFullName(packageFamilyName)
     ; Construct the special "indirect string" that SHLoadIndirectString understands.
     indirectString := "@{" . PackageFullName . "?" . ResourceUri . "}"
     return indirectString
@@ -480,7 +481,7 @@ MakeAppxResourceString(packageFamilyName, resourceUri) {
  * @param resourceId The resource ID of the string resource, as a string. Usually this is a number with a negative sign (e.g., "-100").
  * @returns The constructed string that SHLoadIndirectString understands.
  */
-MakeDllResourceString(dllname, resourceId) {
+static MakeDllResourceString(dllname, resourceId) {
     ; If it already contains slashes, assume it's a full path, so don't prepend the system path.
     if (InStr(dllname, "\") = 0) {
         dllname := "%SystemRoot%\system32\" . dllname
@@ -495,7 +496,7 @@ MakeDllResourceString(dllname, resourceId) {
  * @param indirectString The indirect string to resolve, formatted as "@{PackageFullName?ms-resource-uri}" or "@%SystemRoot%\system32\shell32.dll,-100".
  * @returns The resolved string if successful, or an error message if not.
  */
-ResolveWindowsResource(indirectString) {
+static ResolveWindowsResource(indirectString) {
     ; Prepare a buffer to receive the output string.
     outputBuffer := Buffer(4096 * 2, 0)
 
@@ -516,7 +517,7 @@ ResolveWindowsResource(indirectString) {
  * @param PackageFamilyName The package family name (e.g., "Microsoft.ScreenSketch_8wekyb3d8bbwe").
  * @returns The full package name string, or 'false' if not found or an error occurs.
  */
-GetAppxPackageFullName(PackageFamilyName) {
+static GetAppxPackageFullName(PackageFamilyName) {
     ; Constants needed for the API call
     PACKAGE_FILTER_HEAD := 0x00000010
     ERROR_SUCCESS := 0
@@ -580,13 +581,13 @@ GetAppxPackageFullName(PackageFamilyName) {
 
 ; ------------------------- High precision timer functions --------------------
 ; Note: Using these as function calls will add significant overhead if measuring small time intervals (Under ~0.1 ms)
-StartTimer() {
+static StartTimer() {
     DllCall("QueryPerformanceFrequency", "Int64*", &freq := 0) ; Get the frequency of the counter
     DllCall("QueryPerformanceCounter", "Int64*", &CounterBefore := 0)
     return CounterBefore
 }
 
-EndTimer(CounterBefore, showMsgBox := true) {
+static EndTimer(CounterBefore, showMsgBox := true) {
     DllCall("QueryPerformanceCounter", "Int64*", &CounterAfter := 0)
     DllCall("QueryPerformanceFrequency", "Int64*", &freq := 0) ; Call this again to avoid having to pass it as a parameter
     if (showMsgBox){
@@ -594,4 +595,6 @@ EndTimer(CounterBefore, showMsgBox := true) {
     }
     return (CounterAfter - CounterBefore) / freq * 1000
 }
+
 ; -------------------------------------------------------------------------------
+} ; End of ThioUtils class
