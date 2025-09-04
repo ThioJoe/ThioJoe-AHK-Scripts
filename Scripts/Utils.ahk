@@ -5,11 +5,39 @@
 class ThioUtils {
 ; -------------------------------------------------------------------------------
 
+/**
+ * Windows RECT structure for representing rectangular areas.
+ * @property {Int32} left Left coordinate
+ * @property {Int32} top Top coordinate  
+ * @property {Int32} right Right coordinate
+ * @property {Int32} bottom Bottom coordinate
+ */
+class RECT {
+    left: i32
+    top: i32
+    right: i32
+    bottom: i32
+}
+
+class ControlInfo {
+    Hwnd: iptr
+    Class := ""
+    ClassNN := ""
+    ControlID: iptr
+    Text := ""  ; Optional, only if getText is true
+}
+
+; Type Definition Notes. For some reason need to use 'i32' instead of 'Integer'
 
 ; ------------------- Mouse and Cursor Related --------------------
 
-; Check if mouse is over a specific window and control. Allows for wildcards in the control name
-; Example:          #HotIf mouseOver("ahk_exe dopus.exe", "dopus.tabctrl1")
+/**
+ * Check if mouse is over a specific window and control. Allows for wildcards in the control name.
+ * @param {String} winTitle The window title or identifier to check against (e.g., "ahk_exe dopus.exe")
+ * @param {String} ctl The control class name to match, supports wildcards with * (default: '' matches any control)
+ * @returns {Bool} True if mouse is over the specified window and control, false otherwise
+ * @example #HotIf CheckMouseOverControlAndWindow("ahk_exe dopus.exe", "dopus.tabctrl1")
+ */
 static CheckMouseOverControlAndWindow(winTitle, ctl := '') {
     MouseGetPos(unset, unset, &hWnd, &classNN)
     if classNN = "" {
@@ -33,7 +61,12 @@ static CheckMouseOverControlAndWindow(winTitle, ctl := '') {
     }
 }
 
-; Optimized version for exact control matches:
+/**
+ * Optimized version for exact control matches (no wildcards).
+ * @param {String} winTitle The window title or identifier to check against
+ * @param {String} ctl The exact control class name to match
+ * @returns {Bool} True if mouse is over the specified window and exact control, false otherwise
+ */
 static CheckMouseOverControlAndWindowExact(winTitle, ctl) {
     MouseGetPos(unset, unset, &hWnd, &classNN)
     if classNN = "" {
@@ -43,6 +76,11 @@ static CheckMouseOverControlAndWindowExact(winTitle, ctl) {
     return WinExist(winTitle " ahk_id" hWnd) && (ctl = classNN)
 }
 
+/**
+ * Check if mouse is over a control with a specific class name, regardless of window.
+ * @param {String} ctl The control class name to match, supports wildcards with *
+ * @returns {Bool} True if mouse is over the specified control, false otherwise
+ */
 static CheckMouseOverControl(ctl) {
     MouseGetPos(unset, unset, unset, &classNN)
     if classNN = "" {
@@ -59,12 +97,23 @@ static CheckMouseOverControl(ctl) {
         return false
 }
 
+/**
+ * Check if mouse is over a control with an exact class name match (no wildcards).
+ * @param {String} ctl The exact control class name to match
+ * @returns {Bool} True if mouse is over the exact control, false otherwise
+ */
 static CheckMouseOverControlExact(ctl) {
     MouseGetPos(unset, unset, unset, &classNN)
     return (ctl = classNN)
 }
 
-; Check if mouse is over a specific window and control (allows wildcards), with additional parameters for various properties of the control
+/**
+ * Check if mouse is over a specific window and control with additional property constraints.
+ * @param {String} winTitle The window title or identifier to check against (default: '' matches any window)
+ * @param {String} ctl The control class name to match, supports wildcards with * (default: '' matches any control)  
+ * @param {Integer} ctlMinWidth Minimum width the control must have in pixels (default: 0 for no constraint)
+ * @returns {Bool} True if mouse is over the specified window, control, and meets constraints, false otherwise
+ */
 static CheckMouseOverControlAdvanced(winTitle, ctl := '', ctlMinWidth := 0) {
     ; ------ Local Functions ------
     checkWidth(ctrlToCheck, winHwnd, ctlMinWidth) {
@@ -108,14 +157,23 @@ static CheckMouseOverControlAdvanced(winTitle, ctl := '', ctlMinWidth := 0) {
     return false
 }
 
-; Check if mouse is over a specific window by program name (even if not focused)
-; Example:          #HotIf mouseOverProgram("ahk_exe notepad.exe")
+/**
+ * Check if mouse is over a specific window by program name (even if not focused).
+ * @param {String} programTitle The program identifier (e.g., "ahk_exe notepad.exe")
+ * @returns {Bool} True if mouse is over the specified program window, false otherwise
+ * @example #HotIf CheckMouseOverProgram("ahk_exe notepad.exe")
+ */
 static CheckMouseOverProgram(programTitle) {
     MouseGetPos(unset, unset, &hWnd)
     return WinExist(programTitle " ahk_id" hWnd)
 }
 
-; Example: CheckMouseOverSpecificWindowClass("#32770")
+/**
+ * Check if mouse is over a window with a specific window class.
+ * @param {String} classNNCheck The window class name to check for (e.g., "#32770")
+ * @returns {Bool} True if mouse is over a window with the specified class, false otherwise
+ * @example CheckMouseOverSpecificWindowClass("#32770")
+ */
 static CheckMouseOverSpecificWindowClass(classNNCheck) {
     MouseGetPos(unset, unset, &hWnd)
     ; Get the classNN of the window
@@ -124,20 +182,29 @@ static CheckMouseOverSpecificWindowClass(classNNCheck) {
     return (windowClass == classNNCheck)
 }
 
-; Get the handle of the window under the mouse cursor
+/**
+ * Get the handle (HWND) of the window under the mouse cursor.
+ * @returns {Int} The window handle under the mouse cursor
+ */
 static GetWindowHwndUnderMouse() {
     MouseGetPos(unset, unset, &WindowhwndOut)
     ;MsgBox("Window Hwnd: " Windowhwnd)
     return WindowhwndOut
 }
 
-; Get the class name of the control under the mouse cursor
+/**
+ * Get the class name of the control under the mouse cursor.
+ * @returns {String} The control class name under the mouse cursor
+ */
 static GetControlClassUnderMouse() {
     MouseGetPos(unset, unset, unset, &classNN)
     return classNN
 }
 
-; Get the Handle/Hwnd of the specific control under the mouse cursor (not the window's handle)
+/**
+ * Get the handle (HWND) of the specific control under the mouse cursor (not the window's handle).
+ * @returns {Int} The control handle under the mouse cursor, or empty string if none
+ */
 static GetControlUnderMouseHandleID() {
     MouseGetPos(unset, unset, unset, &controlHandleID, 2) ; If controlHandleID is not provided, it will be an empty string
     return controlHandleID
@@ -145,8 +212,10 @@ static GetControlUnderMouseHandleID() {
 
 ; ------------------ Prompts -----------------------
 
-; Shows a dialog box to enter a directory path and validates it
-;    Return Type: String (Path) or empty string if cancelled or invalid
+/**
+ * Shows a dialog box to enter a directory path and validates it.
+ * @returns {String} Valid directory path, or empty string if cancelled or invalid
+ */
 static ShowDirectoryPathEntryBox() {
     path := InputBox("Enter a path to navigate to", "Path", "w300 h100")
 
@@ -173,10 +242,18 @@ static ShowDirectoryPathEntryBox() {
 
 ; ------------------ Manipulate User Input --------------------
 
-; Uses Windows API SendMessage to directly send a mouse wheel movement message to a window, instead of using multiple wheel scroll events
-;     > This is useful for apps that ignore the Windows scroll speed / scroll line amount settings
-; Use positive multiplier for scrolling up and negative for scrolling down. The handle ID can be either for the window or a control inside it
-static MouseScrollMultiplied(multiplier, forceWindowHandle := false, targetHandleID := unset, mousePosX := unset, mousePosY := unset) {
+/**
+ * Uses Windows API SendMessage to directly send a mouse wheel movement message to a window. Instead o fusing multiple wheel scroll events.
+ * This is useful for apps that ignore the Windows scroll speed / scroll line amount settings.
+ * @param {Number} multiplier Scroll multiplier - positive for scrolling up, negative for scrolling down
+ * @param {Bool} forceWindowHandle Whether to force using window handle instead of control handle (default: false)
+ * @param {Bool} useSendMessage Whether to use SendMessage instead of PostMessage (default: false)
+ * @param {Integer} targetHandleID Specific window/control handle to target (default: unset, auto-detected)
+ * @param {Integer} mousePosX Mouse X position for the message (default: unset, auto-detected)
+ * @param {Integer} mousePosY Mouse Y position for the message (default: unset, auto-detected)
+ * @returns {Int|unset} Result from SendMessage if used, otherwise unset
+ */
+static MouseScrollMultiplied(multiplier, forceWindowHandle := false, useSendMessage := false, targetHandleID := unset,  mousePosX := unset, mousePosY := unset) {
     ; Gets the mouse position and handles under the mouse if not provided
     if !IsSet(targetHandleID) or !IsSet(mousePosX) or !IsSet(mousePosY) {
         MouseGetPos(&mousePosX, &mousePosY, &windowHandleID, &controlHandleID, 2) ; If controlHandleID is not provided, it will be an empty string
@@ -188,12 +265,21 @@ static MouseScrollMultiplied(multiplier, forceWindowHandle := false, targetHandl
 
     ; 120 is the default delta for one scroll notch in Windows, regardless of mouse setting for number of lines to scroll
     delta := Round(120 * multiplier)
-    ; Construct wParam: shift delta to high-order word (left 16 bits)
-    wParam := delta << 16
-    ; Construct lParam: combine x and y coordinates: x goes in low word, y in high word
-    lParam := (mousePosY << 16) | (mousePosX & 0xFFFF)
-    ; WM_MOUSEWHEEL = 0x020A
-    result := SendMessage(0x020A, wParam, lParam, unset, "ahk_id " targetHandleID)
+    wParam := delta << 16 ; Construct wParam: shift delta to high-order word (left 16 bits)
+    lParam := (mousePosY << 16) | (mousePosX & 0xFFFF) ; Construct lParam: combine x and y coordinates: x goes in low word, y in high word
+    WM_MOUSEWHEEL := 0x020A
+
+    ; PostMessage is safer because it doesn't require waiting for a response from the window like if it freezes
+    ; SendMessage might be faster but could be a bit glitchy. I set the timeout to -1 so it shouldn't wait but not sure how well that works.
+    if (useSendMessage == true){
+        try { 
+            result := SendMessage(WM_MOUSEWHEEL, wParam, lParam, unset, "ahk_id " targetHandleID, unset, unset, unset, 25) 
+        } catch {
+        }   ; No catch, it will always 'fail' because of the timeout but we don't care
+    }
+    else {
+        PostMessage(WM_MOUSEWHEEL, wParam, lParam, unset, "ahk_id " targetHandleID)
+    }
 
     ; Uncomment below for debugging. Sometimes apps return a failed result even if it works, so leaving this commented out since it's not reliable
     ; ---------------------------------------------
@@ -202,12 +288,17 @@ static MouseScrollMultiplied(multiplier, forceWindowHandle := false, targetHandl
     ; ToolTip("SendMessage WM_MOUSEWHEEL returned: " resultStr "`n wParam: " wParam "`n Delta: " delta "`n" using " Handle: " targetHandleID)
     ; ---------------------------------------------
 
-    return result
+    ; return result
 }
 
 ; ------------------ Windows and Controls -------------------------
-; Checks if a window has a control with a specific class name. Allows wildcards in the form of an asterisk (*), otherwise exact matching is done
-;    Return Type: Bool (True/False)
+
+/**
+ * Checks if a window has a control with a specific class name. Allows wildcards in the form of an asterisk (*).
+ * @param {Integer} hwnd The window handle to check
+ * @param {String} pattern The exact control class name to match (supports * wildcards)
+ * @returns {Bool} True if the window contains a matching control, false otherwise
+ */
 static CheckWindowHasControlName(hwnd, pattern) {
     try {
         controlsObj := WinGetControls("ahk_id " hwnd)
@@ -231,10 +322,95 @@ static CheckWindowHasControlName(hwnd, pattern) {
     return false
 }
 
-; Gets all the controls of a window as objects from the Windows API, given the window's HWND
-; Can be used as a replacement for WinGetControls() which only returns control names, this way you can get the names and HWNDs in one go
-;    Return Type: Array of control objects with properties: Class (String), ClassNN (String), ControlID (Int), Hwnd (Int / Pointer)
-;    Optional Parameter: getText (Bool) - If true, will also get the text of each control and put it into a Text property
+/**
+ * Lists all windows for a given process name if provided, otherwise lists all windows.
+ * Results are copied to clipboard.
+ * @param {String} procString The process name to filter by (e.g., "notepad.exe"), or unset for all windows (default: unset)
+ * @param {Bool} detectHidden Whether to include hidden windows in the search (default: false)
+ */
+static ListAllWindowsForProcess(procString := unset, detectHidden := false) {
+    local origDetectHiddenWindowSetting := DetectHiddenWindows(detectHidden) ; Store the setting to restore later if different
+
+    try {
+        if (IsSet(procString)) {
+            local hWndArray := WinGetList("ahk_exe " procString, unset, unset)
+            local ProcessName := procString
+        } else {
+            local hWndArray := WinGetList(unset, unset, unset)
+            local ProcessName := "All"
+        }
+
+        finalString := ""
+
+        ; Check if the array was created and contains any windows
+        if IsSet(hWndArray) && hWndArray.Length > 0 {
+            ; OutputDebug("Found " hWndArray.Length " window(s) for " ProcessName ":`n")
+            ; Loop through each HWND found
+            for index, hwnd in hWndArray {
+                ; Get the title and class for the current HWND
+                local title := ""
+                local class := ""
+                local positionString := ""
+                local procName := ""
+
+                try {
+                    title := WinGetTitle("ahk_id " hwnd)
+                } catch {
+                    ; Nothing, we'll know it failed to find byecause it will be blank
+                }
+
+                try {
+                    class := WinGetClass("ahk_id " hwnd)
+                } catch {
+                    ; Nothing, we'll know it failed to find byecause it will be blank
+                }
+
+                try {
+                    ; Get the extended frame bounds (visible window bounds)
+                    frameBounds := ThioUtils.RECT()
+                    DllCall("dwmapi\DwmGetWindowAttribute",
+                        "ptr", hwnd,
+                        "uint", 9,  ; DWMWA_EXTENDED_FRAME_BOUNDS
+                        "ptr", frameBounds,
+                        "uint", 16)
+
+                    ; Calculate visible window dimensions
+                    visibleWidth := frameBounds.right - frameBounds.left
+                    visibleHeight := frameBounds.bottom - frameBounds.top
+
+                    positionString := Format("Position: {},{} Size: {}x{}", frameBounds.left, frameBounds.top, visibleWidth, visibleHeight)
+                }
+
+                try {
+                    ; Get the full process name owning the window
+                    procName := WinGetProcessName("ahk_id " hwnd)
+                }
+
+                ; Add to the final string
+                finalString .= Format("`n  Window {}:`n    Process: {} `n    HWND:  {} `n    Class: {} `n    Title: {} `n    {} `n--------------------", index, procName, hwnd, class, title, positionString)
+            }
+        } else {
+            ThioUtils.TooltipWithDelayedRemove("No windows found for process: " ProcessName, 1500)
+            return
+        }       
+
+        ; Add final string to clipboard
+        A_Clipboard := finalString
+        ThioUtils.TooltipWithDelayedRemove("Result added to clipboard", 1500)
+
+    ; Always be sure to restore the original setting    
+    } finally {
+        DetectHiddenWindows(origDetectHiddenWindowSetting) ; Restore the original setting
+    }
+}
+
+/**
+ * Gets all the controls of a window as objects from the Windows API, given the window's HWND.
+ * Can be used as a replacement for WinGetControls() which only returns control names.
+ * @param {Integer} windowHwnd The window handle to enumerate controls for
+ * @param {Bool} getText Whether to also get the text of each control (default: false)
+ * @returns {ControlInfo[]} Array of custom control objects with properties: Class, ClassNN, ControlID, Hwnd, and optionally Text
+ */
 static GetAllControlsAsObjects_ViaWindowsAPI(windowHwnd, getText := unset) {
     ; ---------------- Local Functions ----------------
     EnumChildProc(hwnd, lParam) {
@@ -280,9 +456,14 @@ static GetAllControlsAsObjects_ViaWindowsAPI(windowHwnd, getText := unset) {
     return controlsArray
 }
 
-; Sets the theme of menus by the process - Adapted from https://www.autohotkey.com/boards/viewtopic.php?style=19&f=82&t=133886#p588184
-; Usage: Put this before creating any menus. AllowDark will folow system theme. Seems that once set, the app must restart to change it.
-;SetMenuTheme("AllowDark")
+; Adapted from https://www.autohotkey.com/boards/viewtopic.php?style=19&f=82&t=133886#p588184
+/**
+ * Sets the theme of context menus for the current process.
+ * @param {Integer|String} appMode The app mode setting: 0=Default, 1=AllowDark, 2=ForceDark, 3=ForceLight, 4=Max (default: 0)
+ * @returns {Int} Previous app mode setting, or -1 on error
+ * @example SetContextMenuTheme("AllowDark") ; Follow system theme
+ * @note The call to this function must be put before creating any menus, otherwise the app must restart to change it.
+ */
 static SetContextMenuTheme(appMode := 0) {
     static preferredAppMode := { Default: 0, AllowDark: 1, ForceDark: 2, ForceLight: 3, Max: 4 }
     static uxtheme := dllCall("Kernel32.dll\GetModuleHandle", "Str", "uxtheme", "Ptr")
@@ -310,8 +491,8 @@ static SetContextMenuTheme(appMode := 0) {
 
 /**
  * Resolves an ms-resource URI for a given AppX package using SHLoadIndirectString.
- * @param packageFamilyName The package family name (e.g., "Microsoft.ScreenSketch_8wekyb3d8bbwe").
- * @param ResourceUri The full ms-resource URI, such a "ms-resource://Microsoft.ScreenSketch/Resources/MarkupAndShareToast" 
+ * @param {String} packageFamilyName The package family name (e.g., "Microsoft.ScreenSketch_8wekyb3d8bbwe").
+ * @param {String} ResourceUri The full ms-resource URI, such a "ms-resource://Microsoft.ScreenSketch/Resources/MarkupAndShareToast" 
  * @returns The cosntructed string that SHLoadIndirectString understands.
  */
 static MakeAppxResourceString(packageFamilyName, resourceUri) {
@@ -323,8 +504,8 @@ static MakeAppxResourceString(packageFamilyName, resourceUri) {
 
 /**
  * Resolves an ms-resource URI for a given AppX package using SHLoadIndirectString.
- * @param dllname The name or path of the DLL (e.g., "NotificationController.dll" or "%SystemRoot%\system32\shell32.dll")
- * @param resourceId The resource ID of the string resource, as a string. Usually this is a number with a negative sign (e.g., "-100").
+ * @param {String} dllname The name or path of the DLL (e.g., "NotificationController.dll" or "%SystemRoot%\system32\shell32.dll")
+ * @param {String} resourceId The resource ID of the string resource, as a string. Usually this is a number with a negative sign (e.g., "-100").
  * @returns The constructed string that SHLoadIndirectString understands.
  */
 static MakeDllResourceString(dllname, resourceId) {
@@ -339,7 +520,7 @@ static MakeDllResourceString(dllname, resourceId) {
 
 /**
  * Resolves a windows localized (multilanguage) resource string using SHLoadIndirectString API.
- * @param indirectString The indirect string to resolve, formatted as "@{PackageFullName?ms-resource-uri}" or "@%SystemRoot%\system32\shell32.dll,-100".
+ * @param {String} indirectString The indirect string to resolve, formatted as "@{PackageFullName?ms-resource-uri}" or "@%SystemRoot%\system32\shell32.dll,-100".
  * @returns The resolved string if successful, or an error message if not.
  */
 static ResolveWindowsResource(indirectString) {
@@ -360,8 +541,8 @@ static ResolveWindowsResource(indirectString) {
 
 /**
  * Gets the first full package name for a given package family name.
- * @param PackageFamilyName The package family name (e.g., "Microsoft.ScreenSketch_8wekyb3d8bbwe").
- * @returns The full package name string, or 'false' if not found or an error occurs.
+ * @param {String} PackageFamilyName The package family name (e.g., "Microsoft.ScreenSketch_8wekyb3d8bbwe").
+ * @returns {String|false} The full package name string, or 'false' if not found or an error occurs.
  */
 static GetAppxPackageFullName(PackageFamilyName) {
     ; Constants needed for the API call
@@ -425,8 +606,16 @@ static GetAppxPackageFullName(PackageFamilyName) {
     return false
 }
 
-; Launch any program and move it to the mouse position, with parameters for relative offset vs mouse position
-; Optionally, you can provide the path to the executable to launch (which may be faster, and should be more reliable), otherwise it will use the program title
+/**
+ * Launch any program and move it to the mouse position, with parameters for relative offset vs mouse position.
+ * @param {String} programTitle The program executable name or window title to launch
+ * @param {Integer} xOffset Horizontal offset from mouse position in pixels (default: 0)
+ * @param {Integer} yOffset Vertical offset from mouse position in pixels (default: 0)
+ * @param {String} exePath Optional path to the executable (may be faster and more reliable) (default: "")
+ * @param {Bool} forceWinActivate Whether to force window activation after positioning (default: false)
+ * @param {Integer} sizeX Optional window width in pixels (default: 0 for no resize)
+ * @param {Integer} sizeY Optional window height in pixels (default: 0 for no resize)
+ */
 static LaunchProgramAtMouse(programTitle, xOffset := 0, yOffset := 0, exePath := "", forceWinActivate := false, sizeX := 0, sizeY := 0) {
     ; Store original settings to restore later
     originalMouseMode := A_CoordModeMouse
@@ -487,7 +676,13 @@ static LaunchProgramAtMouse(programTitle, xOffset := 0, yOffset := 0, exePath :=
     CoordMode("Mouse", originalMouseMode)
 }
 
-; Just checks if a particular clipboard format is currently on the clipboard or not
+/**
+ * Checks if a particular clipboard format is currently available on the clipboard.
+ * @param {String} formatName The name of the clipboard format to check for (default: "")
+ * @param {Integer} formatIDInput The numeric ID of the clipboard format (default: unset)
+ * @returns {Bool} True if the format is available on the clipboard, false otherwise
+ * @note Either formatName or formatIDInput must be provided
+ */
 static CheckForClipboardFormat(formatName := "", formatIDInput := unset) {
     formatId := -1
 
@@ -508,7 +703,13 @@ static CheckForClipboardFormat(formatName := "", formatIDInput := unset) {
     }
 }
 
-; Gets the raw bytes data of a specific clipboard format, given the format's name string or ID number
+/**
+ * Gets the raw bytes data of a specific clipboard format.
+ * @param {String} formatName The name of the clipboard format to retrieve (default: "")
+ * @param {Integer} formatIDInput The numeric ID of the clipboard format (default: unset)
+ * @returns {Array} Array of bytes representing the clipboard format data, or empty array if not found
+ * @note Either formatName or formatIDInput must be provided
+ */
 static GetClipboardFormatRawData(formatName := "", formatIDInput := unset) {
     if IsSet(formatIDInput) {
         formatId := formatIDInput
@@ -567,6 +768,14 @@ static GetClipboardFormatRawData(formatName := "", formatIDInput := unset) {
 }
 
 ; ------------------------- Tooltip ------------------------------
+
+/**
+ * Display a tooltip with automatic removal after a specified delay.
+ * @param {String} text The text to display in the tooltip
+ * @param {Integer} delayMs The delay in milliseconds before removing the tooltip
+ * @param {Integer} x Optional X coordinate for tooltip position (default: unset for mouse position)
+ * @param {Integer} y Optional Y coordinate for tooltip position (default: unset for mouse position)
+ */
 static TooltipWithDelayedRemove(text, delayMs, x := unset, y := unset) {
     if (IsSet(x) && IsSet(y)) {
         ToolTip(text, x, y)
@@ -577,6 +786,10 @@ static TooltipWithDelayedRemove(text, delayMs, x := unset, y := unset) {
     this.RemoveToolTip(delayMs)
 }
 
+/**
+ * Remove the current tooltip, optionally after a delay.
+ * @param {Integer} delayMs The delay in milliseconds before removing the tooltip (default: 0 for immediate removal)
+ */
 static RemoveToolTip(delayMs := 0) {
     ; Local function to use in the timer callback
     SetNoTooltip() {
@@ -591,13 +804,24 @@ static RemoveToolTip(delayMs := 0) {
 }
 
 ; ------------------------- High precision timer functions --------------------
-; Note: Using these as function calls will add significant overhead if measuring small time intervals (Under ~0.1 ms)
+
+/**
+ * Start a high precision timer using Windows Performance Counter.
+ * @returns {Int64} The performance counter value to pass to EndTimer
+ * @note Using these as function calls will add significant overhead if measuring small time intervals (Under ~0.1 ms)
+ */
 static StartTimer() {
     DllCall("QueryPerformanceFrequency", "Int64*", &freq := 0) ; Get the frequency of the counter
     DllCall("QueryPerformanceCounter", "Int64*", &CounterBefore := 0)
     return CounterBefore
 }
 
+/**
+ * End a high precision timer and calculate elapsed time.
+ * @param {Int64} CounterBefore The performance counter value from StartTimer
+ * @param {Bool} showMsgBox Whether to display the result in a message box (default: true)
+ * @returns {Float} Elapsed time in milliseconds
+ */
 static EndTimer(CounterBefore, showMsgBox := true) {
     DllCall("QueryPerformanceCounter", "Int64*", &CounterAfter := 0)
     DllCall("QueryPerformanceFrequency", "Int64*", &freq := 0) ; Call this again to avoid having to pass it as a parameter
