@@ -1089,38 +1089,17 @@ class ExplorerDialogPathSelector {
                 } catch Error as err{
                     OutputDebug("Error or no files selected in ListView. Message: " err.Message)
                 }
-                ; Send the path to the edit control text box using PostMessage
-                PostMessage(
-                    WM_SETTEXT, ; Msg - 0xC is WM_SETTEXT - Sets the text of the text box
-                    0,          ; wParam
-                    path,       ; lParam
-                    dialogInfo.ControlHwnd ; Control Hwnd
-                )
-
+                ; Send the path to the edit control text box using SendMessage
+                DllCall("SendMessage", "Ptr", dialogInfo.ControlHwnd, "UInt", WM_SETTEXT, "Ptr", 0, "Str", path) ; 0xC is WM_SETTEXT - Sets the text of the text box
                 ; Tell the dialog to accept the text box contents, which will cause it to navigate to the path
-                PostMessage(
-                    0x0111,     ; Msg - WM_COMMAND
-                    0x1,        ; wParam - command ID (0x1) typically corresponds to the IDOK control which represents the primary action button, whether it's labeled "Save" or "Open".
-                    0,          ; lParam
-                    windowHwnd, ; Control Hwnd
-                )
+                DllCall("SendMessage", "Ptr", windowHwnd, "UInt", 0x0111, "Ptr", 0x1, "Ptr", 0) ; command ID (0x1) typically corresponds to the IDOK control which represents the primary action button, whether it's labeled "Save" or "Open".
 
                 ; Restore the initial text of the edit control - Usually this happens automatically but just in case
                 if (initialText){
-                    PostMessage(
-                        WM_SETTEXT, ; Msg
-                        0,          ; wParam
-                        initialText, ; lParam
-                        dialogInfo.ControlHwnd ; Control Hwnd
-                    )
+                    DllCall("SendMessage", "Ptr", dialogInfo.ControlHwnd, "UInt", WM_SETTEXT, "Ptr", 0, "Str", initialText)
                 ; Or if there was no initial text and now the control has the path leftover in it, then just clear the control text
                 } else if (ControlGetText(dialogInfo.ControlHwnd, "ahk_id " windowHwnd) = path) {
-                    PostMessage(
-                        WM_SETTEXT, ; Msg
-                        0,          ; wParam
-                        "",         ; lParam
-                        dialogInfo.ControlHwnd ; Control Hwnd
-                    )
+                    DllCall("SendMessage", "Ptr", dialogInfo.ControlHwnd, "UInt", WM_SETTEXT, "Ptr", 0, "Str", "")
                 }
 
             } else if (dialogInfo.Type = "FolderBrowserDialog") {
