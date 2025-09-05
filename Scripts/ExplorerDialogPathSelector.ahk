@@ -24,7 +24,7 @@ SetWorkingDir(A_ScriptDir)
 
 ; Set global variables about the program and compiler directives. These use regex to extract data from the lines above them (A_PriorLine)
 ; Keep the line pairs together!
-global g_pathSelector_version := "1.4.0.0"
+global g_pathSelector_version := "1.4.1.0"
 ;@Ahk2Exe-Let ProgramVersion=%A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 global g_pathSelector_programName := "Explorer Dialog Path Selector"
@@ -1089,17 +1089,38 @@ class ExplorerDialogPathSelector {
                 } catch Error as err{
                     OutputDebug("Error or no files selected in ListView. Message: " err.Message)
                 }
-                ; Send the path to the edit control text box using SendMessage
-                DllCall("SendMessage", "Ptr", dialogInfo.ControlHwnd, "UInt", WM_SETTEXT, "Ptr", 0, "Str", path) ; 0xC is WM_SETTEXT - Sets the text of the text box
+                ; Send the path to the edit control text box using PostMessage
+                PostMessage(
+                    WM_SETTEXT, ; Msg - 0xC is WM_SETTEXT - Sets the text of the text box
+                    0,          ; wParam
+                    path,       ; lParam
+                    dialogInfo.ControlHwnd ; Control Hwnd
+                )
+
                 ; Tell the dialog to accept the text box contents, which will cause it to navigate to the path
-                DllCall("SendMessage", "Ptr", windowHwnd, "UInt", 0x0111, "Ptr", 0x1, "Ptr", 0) ; command ID (0x1) typically corresponds to the IDOK control which represents the primary action button, whether it's labeled "Save" or "Open".
+                PostMessage(
+                    0x0111,     ; Msg - WM_COMMAND
+                    0x1,        ; wParam - command ID (0x1) typically corresponds to the IDOK control which represents the primary action button, whether it's labeled "Save" or "Open".
+                    0,          ; lParam
+                    windowHwnd, ; Control Hwnd
+                )
 
                 ; Restore the initial text of the edit control - Usually this happens automatically but just in case
                 if (initialText){
-                    DllCall("SendMessage", "Ptr", dialogInfo.ControlHwnd, "UInt", WM_SETTEXT, "Ptr", 0, "Str", initialText)
+                    PostMessage(
+                        WM_SETTEXT, ; Msg
+                        0,          ; wParam
+                        initialText, ; lParam
+                        dialogInfo.ControlHwnd ; Control Hwnd
+                    )
                 ; Or if there was no initial text and now the control has the path leftover in it, then just clear the control text
                 } else if (ControlGetText(dialogInfo.ControlHwnd, "ahk_id " windowHwnd) = path) {
-                    DllCall("SendMessage", "Ptr", dialogInfo.ControlHwnd, "UInt", WM_SETTEXT, "Ptr", 0, "Str", "")
+                    PostMessage(
+                        WM_SETTEXT, ; Msg
+                        0,          ; wParam
+                        "",         ; lParam
+                        dialogInfo.ControlHwnd ; Control Hwnd
+                    )
                 }
 
             } else if (dialogInfo.Type = "FolderBrowserDialog") {
@@ -1725,6 +1746,8 @@ class ExplorerDialogPathSelector {
 
         ; Set initial sizes
         initialWindowWidth := 600
+        defaultValColWidth := 120 ; Note that this will be adjusted automatically for scaling
+
         ; Properly set the height of the groupbox to fit all controls
         grpBox.GetPos(unset, &grpBoxY, unset, &grpBoxHeight)
         pathsEdit.GetPos(unset, &pathEditY, unset, &pathEditHeight)
@@ -1748,7 +1771,12 @@ class ExplorerDialogPathSelector {
 
         GetListViewColumnWidth(columnIndex) {
             static LVM_GETCOLUMNWIDTH := 0x101D
-            return SendMessage(LVM_GETCOLUMNWIDTH, columnIndex - 1, 0, listView.Hwnd)
+            try {
+                return SendMessage(LVM_GETCOLUMNWIDTH, columnIndex - 1, 0, listView.Hwnd, unset, unset, unset, unset, 75)
+            } catch {
+                ; If it times out or fails return default width
+                return defaultValColWidth
+            }
         }
 
         IncreaseRelativeColumnWidth(columnIndex, increaseAmount) {
@@ -1769,7 +1797,6 @@ class ExplorerDialogPathSelector {
             }
 
             ; Set column widths
-            defaultValColWidth := 120 ; Note that this will be adjusted automatically for scaling
             listView.ModifyCol(1, "Auto")  ; Index - AutoHdr to auto-size based on column contents. AutoHdr would be header text
             listView.ModifyCol(2, "Auto") ; Condition Type - Auto to auto-size based on content since there are only 2 options
             listView.ModifyCol(3, defaultValColWidth) ; Condition Values column - Fixed starting size auto-size based on content, then adjust further if necessary
@@ -2186,7 +2213,7 @@ class ExplorerDialogPathSelector {
         helpGui.SetFont("s10", "Segoe UI")
         helpGui.OnEvent("Size", GuiResize)
 
-        hTT := ExplorerDialogPathSelector.CreateTooltipControl(helpGui.Hwnd)
+        ; hTT := ExplorerDialogPathSelector.CreateTooltipControl(helpGui.Hwnd) ; Currently no tooltips in help window
 
         ; Settings file info
         settingsFileDescription := helpGui.AddText("xm y+10 w300 h20", "Current config file path:") ; Creating this separately so we can set the font
@@ -2259,7 +2286,12 @@ class ExplorerDialogPathSelector {
         closeButton.Focus()
     }
 
-    ; Create a tooltip control window and return its handle
+    ; 
+    /**
+     * Create a tooltip control window and return its handle
+     * @param {Integer} guiHwnd 
+     * @returns {Integer} Handle to the tooltip control
+     */
     static CreateTooltipControl(guiHwnd) {
         ; Create tooltip window
         static ICC_TAB_CLASSES := 0x8
@@ -2290,12 +2322,23 @@ class ExplorerDialogPathSelector {
 
         ; Set maximum width to enable word wrapping and newlines in tooltips
         static TTM_SETMAXTIPWIDTH := 0x418
-        DllCall("SendMessage", "Ptr", hTT, "UInt", TTM_SETMAXTIPWIDTH, "Ptr", 0, "Ptr", 600)
+        PostMessage(
+            TTM_SETMAXTIPWIDTH, ; Msg
+            0,                  ; wParam (Must be zero for TTM_SETMAXTIPWIDTH)
+            600,                ; lParam (Maximum tooltip window width, in pixels; or -1 to allow any width)
+            hTT,                ; Hwnd to tooltip
+        )
 
         return hTT
     }
 
     ; Add a tooltip to a control
+    /**
+     * 
+     * @param {Integer} hTT Handle to the tooltip control window
+     * @param {Integer} controlHwnd Handle to the control getting the tooltip
+     * @param {String} text Text of the tooltip 
+     */
     static AddTooltipToControl(hTT, controlHwnd, text) {
         ; TTM_ADDTOOLW - Unicode version only
         static TTM_ADDTOOL := 0x432
@@ -2331,9 +2374,20 @@ class ExplorerDialogPathSelector {
         NumPut("Ptr",  controlHwnd,  TOOLINFO, A_PtrSize = 8 ? 24 : 16)  ; uId
         NumPut("Ptr",  StrPtr(text), TOOLINFO, A_PtrSize = 8 ? 48 : 36)  ; lpszText
 
-        ; Add the tool
-        result := DllCall("SendMessage", "Ptr", hTT, "UInt", TTM_ADDTOOL, "Ptr", 0, "Ptr", TOOLINFO)
-        return result
+        try {
+            ; Add the tool - It seems only SendMessage works here. With PostMessage the tooltip text is gibberish.
+            SendMessage(
+                TTM_ADDTOOL,    ; Msg
+                0,              ; wParam (Must be zero)
+                TOOLINFO,       ; lParam (Must be TOOLINFO structure)
+                hTT,            ; AHK "Control" Param - In this case handle to tooltip
+                unset, unset, unset, unset, ; WinTitle, WinText, ExcludeTitle, ExcludeText
+                50              ; Timeout, set it to something short
+            )
+        } catch {
+            ; Try/Catch just in case it takes too long, so don't bother doing anything. It's not critical.
+        }
+        
     }
 
 
