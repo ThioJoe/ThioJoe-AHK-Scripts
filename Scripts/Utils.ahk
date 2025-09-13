@@ -767,6 +767,27 @@ static GetClipboardFormatRawData(formatName := "", formatIDInput := unset) {
     return []  ; Format not found
 }
 
+/**
+ * Simulate typing a string letter by letter
+ * @param {string} text 
+ * @param {integer} delayMs
+ * @returns {void}
+ */
+static TypeString(text, delayMs) {
+    originalInputDelay := A_KeyDelay
+    SetKeyDelay(delayMs)
+
+    try {
+        ; Loop through each character in the string and send it with a delay
+        loop StrLen(text) {
+            SendText(SubStr(text, A_Index, 1))
+        }
+    } finally {
+        SetKeyDelay(originalInputDelay)
+    }
+    
+}
+
 ; ------------------------- Tooltip ------------------------------
 
 /**
