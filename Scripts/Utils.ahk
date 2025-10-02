@@ -29,7 +29,20 @@ class ControlInfo {
 
 ; Type Definition Notes. For some reason need to use 'i32' instead of 'Integer'
 
-; ------------------- Mouse and Cursor Related --------------------
+;; ------------------- General --------------------
+
+/**
+ * Check if a string starts with a specific prefix.
+ * @param Haystack 
+ * @param Needle 
+ * @param {String|1|0} CaseSense 
+ * @returns {Number} 
+ */
+static StartsWith(Haystack, Needle, CaseSense := "Off") {
+    return InStr(Haystack, Needle, CaseSense) == 1
+}
+
+;; ------------------- Mouse and Cursor Related --------------------
 
 /**
  * Check if mouse is over a specific window and control. Allows for wildcards in the control name.
@@ -210,7 +223,7 @@ static GetControlUnderMouseHandleID() {
     return controlHandleID
 }
 
-; ------------------ Prompts -----------------------
+;; ------------------ Prompts -----------------------
 
 /**
  * Shows a dialog box to enter a directory path and validates it.
@@ -240,7 +253,7 @@ static ShowDirectoryPathEntryBox() {
     }
 }
 
-; ------------------ Manipulate User Input --------------------
+;; ------------------ Manipulate User Input --------------------
 
 /**
  * Uses Windows API SendMessage to directly send a mouse wheel movement message to a window. Instead o fusing multiple wheel scroll events.
@@ -291,7 +304,7 @@ static MouseScrollMultiplied(multiplier, forceWindowHandle := false, useSendMess
     ; return result
 }
 
-; ------------------ Windows and Controls -------------------------
+;; ------------------ Windows and Controls -------------------------
 
 /**
  * Checks if a window has a control with a specific class name. Allows wildcards in the form of an asterisk (*).
@@ -487,7 +500,7 @@ static SetContextMenuTheme(appMode := 0) {
     }
 }
 
-; --------------------------- Windows Apps and Resources -----------------------------------
+;; --------------------------- Windows Apps and Resources -----------------------------------
 
 /**
  * Resolves an ms-resource URI for a given AppX package using SHLoadIndirectString.
@@ -676,6 +689,8 @@ static LaunchProgramAtMouse(programTitle, xOffset := 0, yOffset := 0, exePath :=
     CoordMode("Mouse", originalMouseMode)
 }
 
+;; --------------------------- Clipboard -----------------------------------
+
 /**
  * Checks if a particular clipboard format is currently available on the clipboard.
  * @param {String} formatName The name of the clipboard format to check for (default: "")
@@ -788,43 +803,84 @@ static TypeString(text, delayMs) {
     
 }
 
-; ------------------------- Tooltip ------------------------------
+;; ------------------------- Tooltip ------------------------------
 
 /**
  * Display a tooltip with automatic removal after a specified delay.
  * @param {String} text The text to display in the tooltip
  * @param {Integer} delayMs The delay in milliseconds before removing the tooltip
- * @param {Integer} x Optional X coordinate for tooltip position (default: unset for mouse position)
- * @param {Integer} y Optional Y coordinate for tooltip position (default: unset for mouse position)
+ * @param {Integer} x Optional X coordinate for tooltip position relative to mouse (default: unset for mouse position)
+ * @param {Integer} y Optional Y coordinate for tooltip position relative to mouse (default: unset for mouse position)
+ * @param {Bool} repositionbottom Whether to reposition the tooltip above the mouse if y is negative. Set to false if wanting to manually position. (default: true)
+ * @param {Integer} whichToolTip The tooltip ID to use (1 or 2) (default: 1)
  */
-static TooltipWithDelayedRemove(text, delayMs, x := unset, y := unset) {
+static TooltipWithDelayedRemove(text, delayMs, x := unset, y := unset, repositionbottom := true, whichToolTip := 1) {
     if (IsSet(x) && IsSet(y)) {
-        ToolTip(text, x, y)
+        ; Set the coordinates relative to the mouse
+        originalTooltipCoordMode := A_CoordModeToolTip
+        originalMouseCoordMode := A_CoordModeMouse
+        CoordMode("ToolTip", "Screen")
+
+        ; Get the current mouse position, adjust coords based on that
+        MouseGetPos(&mouseX, &mouseY)
+        finalX := mouseX + x
+        finalY := mouseY + y
+
+        ; If the tooltip Y position is negative and repositionBottom is true, we'll recalculate the position so the bottom of tooltip is at the y
+        if (y < 0 && repositionbottom) {
+            tooltipSize := this.GetTooltipSize(text)
+            finalY := finalY - tooltipSize.Height
+        }
+
+        ; Show the tooltip
+        ToolTip(text, finalX, finalY)
+
+        ; Restore the coordinate modes in case they were different
+        CoordMode("ToolTip", originalTooltipCoordMode)
+        CoordMode("Mouse", originalMouseCoordMode)
     } else {
         ToolTip(text)
     }
 
-    this.RemoveToolTip(delayMs)
+    this.RemoveToolTip(delayMs, whichToolTip)
 }
 
 /**
  * Remove the current tooltip, optionally after a delay.
  * @param {Integer} delayMs The delay in milliseconds before removing the tooltip (default: 0 for immediate removal)
  */
-static RemoveToolTip(delayMs := 0) {
+static RemoveToolTip(delayMs := 0, whichToolTip := 1) {
     ; Local function to use in the timer callback
-    SetNoTooltip() {
-        ToolTip()  ; Calling ToolTip with no parameters removes it
+    SetNoTooltip(whichToolTipLocal := unset) {
+        ToolTip(unset, unset, unset, whichToolTip)  ; Calling ToolTip with no parameters removes it
     }
 
     if delayMs > 0 {
         SetTimer(SetNoTooltip, -1 * delayMs)
     } else {
-        SetNoTooltip()
+        SetNoTooltip(whichToolTip)
     }
 }
 
-; ------------------------- High precision timer functions --------------------
+/**
+ * Gets the dimensions of a tooltip displaying a given text
+ * @param {string} text Text of the tooltip to get the size of
+ * @param {Integer} whichToolTip 
+ * @returns {Object} 
+ */
+static GetTooltipSize(text, whichToolTip := 2) {
+    origTooltipCoordMode := CoordMode("ToolTip", "Screen")
+    ; Set the tooltip to show off screen so we can get the dimensions of it without it being visible, to reshow it where we want.
+    ; Apparently doesn't work in AHK V2 it moves it on screen, but this is fast enough where it apparently isn't visible anyway
+    ToolTip(text, unset, A_ScreenHeight + 500, whichToolTip) 
+    WinGetPos(&X, &Y, &tW, &tH, "ahk_class tooltips_class32")
+    ThioUtils.RemoveToolTip(unset, whichToolTip)
+    CoordMode("ToolTip", origTooltipCoordMode)
+    return { Width: tW, Height: tH }
+}
+
+
+;; ------------------------- High precision timer functions --------------------
 
 /**
  * Start a high precision timer using Windows Performance Counter.
