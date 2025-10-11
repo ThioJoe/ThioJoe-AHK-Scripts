@@ -24,7 +24,7 @@ SetWorkingDir(A_ScriptDir)
 
 ; Set global variables about the program and compiler directives. These use regex to extract data from the lines above them (A_PriorLine)
 ; Keep the line pairs together!
-global g_pathSelector_version := "1.4.1.0"
+global g_pathSelector_version := "1.5.0.0"
 ;@Ahk2Exe-Let ProgramVersion=%A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 global g_pathSelector_programName := "Explorer Dialog Path Selector"
@@ -343,6 +343,11 @@ class ExplorerDialogPathSelector {
             StringID: "CurrentDialogPath",
             FriendlyName: "Dialog Path Match",
             Description: "If the current path of the dialog window matches the value.`n( * is a wildcard )"
+        }
+        static ParentWindowTitle := {
+            StringID: "ParentWindowTitle",
+            FriendlyName: "Parent Process Window Title",
+            Description: "If the dialog window was opened by a window who's title matches the value. ( * is a wildcard )"
         }
     }
 
@@ -851,11 +856,27 @@ class ExplorerDialogPathSelector {
             return
         }
 
-        ; Get the path from the dialog. At this point we know it's the correct type of window
+        ; Get the path and other info about the dialog. At this point we know it's the correct type of window
         if (windowHwnd) {
             windowPath := GetDialogAddressBarPath(windowHwnd)
+            ; Get info about the parent window name
+            try {
+                hwndParent := DllCall("GetParent", "Ptr", windowHwnd, "UInt")
+                parentWindowTitle := WinGetTitle("ahk_id " hwndParent)
+            } catch as err {
+                OutputDebug("Error getting parent window or parent window title: " err.Message)
+                if (debugMode) {
+                    ToolTip("Unable to get parent window")
+                    Sleep(1000)
+                    ToolTip()
+                }
+                hwndParent := 0
+                parentWindowTitle := ""
+            }
         } else {
             windowPath := ""
+            hwndParent := 0
+            parentWindowTitle := ""
         }
 
         ; Proceed to display the menu
@@ -895,6 +916,23 @@ class ExplorerDialogPathSelector {
                 for conditionPathValue in conditionalFavorite.ConditionValues {
                     if (this.StringMatchWithWildcards(windowPath, conditionPathValue)) {
                         InsertMenuItem(CurrentLocations, "Conditional Favorites - Path Match", unset, unset, unset, unset) ; Header
+                        ; Add all the paths
+                        for conditionPath in conditionalFavorite.Paths {
+                            InsertMenuItem(CurrentLocations, this.g_pth_settings.standardEntryPrefix conditionPath, conditionPath, A_WinDir . "\system32\imageres.dll", "-81", false) ; Conditional Favorite Path
+                            hasItems := true
+                        }
+                        break ; No need to keep going if we found a match
+                    }
+                }
+            }
+        }
+
+        ; Display conditional favorites - Parent process title condition
+        for conditionalFavorite in this.g_pth_Settings.conditionalFavorites {
+            if (conditionalFavorite.conditionType = ExplorerDialogPathSelector.ConditionType.ParentWindowTitle.StringID) {
+                for conditionPathValue in conditionalFavorite.ConditionValues {
+                    if (this.StringMatchWithWildcards(parentWindowTitle, conditionPathValue)) {
+                        InsertMenuItem(CurrentLocations, "Conditional Favorites - Parent Match", unset, unset, unset, unset) ; Header
                         ; Add all the paths
                         for conditionPath in conditionalFavorite.Paths {
                             InsertMenuItem(CurrentLocations, this.g_pth_settings.standardEntryPrefix conditionPath, conditionPath, A_WinDir . "\system32\imageres.dll", "-81", false) ; Conditional Favorite Path
@@ -1666,7 +1704,8 @@ class ExplorerDialogPathSelector {
         ; Map condition type dropdown integers to conditionTypes
         ConditionTypeIndex := Map(
             ExplorerDialogPathSelector.ConditionType.DialogOwnerExe.StringID, 1,
-            ExplorerDialogPathSelector.ConditionType.CurrentDialogPath.StringID, 2
+            ExplorerDialogPathSelector.ConditionType.CurrentDialogPath.StringID, 2,
+            ExplorerDialogPathSelector.ConditionType.ParentWindowTitle.StringID, 3
         )
         ; Track currently edited row
         currentRowNum := 0
@@ -1698,7 +1737,13 @@ class ExplorerDialogPathSelector {
         
         ; Condition Type dropdown
         pathGui.AddText("xp+10 yp+20", "Condition Value Type:")
-        typeDropdown := pathGui.AddDropDownList("w200 vConditionType Choose1", [ExplorerDialogPathSelector.ConditionType.DialogOwnerExe.FriendlyName, ExplorerDialogPathSelector.ConditionType.CurrentDialogPath.FriendlyName])
+        typeDropdown := pathGui.AddDropDownList("w200 vConditionType Choose1", 
+                [
+                ExplorerDialogPathSelector.ConditionType.DialogOwnerExe.FriendlyName, 
+                ExplorerDialogPathSelector.ConditionType.CurrentDialogPath.FriendlyName,
+                ExplorerDialogPathSelector.ConditionType.ParentWindowTitle.FriendlyName
+                ]
+            )
         typeDropdown.OnEvent("Change", ShowConditionTypeDescription)
         ; Condition Type Description text - Shows next to the dropdown
         typeDescription := pathGui.AddText("x+10 yp+10 w150 +Wrap", ExplorerDialogPathSelector.ConditionType.CurrentDialogPath.Description)
@@ -1831,10 +1876,10 @@ class ExplorerDialogPathSelector {
         ; Handle adding new entry
         AddEntry(*) {
             EnableEditPanel(true)
-            typeDropdown.Value := ConditionTypeIndex[ExplorerDialogPathSelector.ConditionType.DialogOwnerExe.StringID]
+            typeDropdown.Value := ConditionTypeIndex[ExplorerDialogPathSelector.ConditionType.DialogOwnerExe.StringID] ; Initial default but can be changed by user
             valuesEdit.Value := ""
             pathsEdit.Value := ""
-            ; Create new entry object in pendingConditionalFavorites
+            ; Create new entry object in pendingConditionalFavorites - Use default placeholders
             entry := {
                 Index : pendingConditionalFavorites.Length + 1,
                 ConditionType: ExplorerDialogPathSelector.ConditionType.DialogOwnerExe.StringID,
@@ -2078,6 +2123,11 @@ class ExplorerDialogPathSelector {
         conditionDesc2 := helpGui.AddText("xm+30 y+2 " txtWStr " +Wrap", "When the current path of the dialog matches a specified path you set.")
         conditionDesc2.Move(unset, unset, WidthForMargin(winWidth, conditionDesc2, 20))
 
+        conditionLabel3 := helpGui.AddText("xm+15 y+10 " txtWStr, "• " ExplorerDialogPathSelector.ConditionType.ParentWindowTitle.FriendlyName)
+        conditionLabel3.SetFont("s10 bold")
+        conditionDesc3 := helpGui.AddText("xm+30 y+2 " txtWStr " +Wrap", "When the title of the parent window (the app window that opened the dialog) contains a specified text string.")
+        conditionDesc3.Move(unset, unset, WidthForMargin(winWidth, conditionDesc3, 20))
+
         ; Condition Values Section
         valuesHeader := helpGui.AddText("xm y+20 " txtWStr " h20", "Condition Values:")
         valuesHeader.SetFont("s10 bold underline")
@@ -2106,6 +2156,12 @@ class ExplorerDialogPathSelector {
         pathExample2 := helpGui.AddText("xm+15 y+5 " txtWStr, "• A conditional value of 'C:\Program Files\*' will match when the dialog window's path starts with 'C:\Program Files\'")
         pathExample1.Move(unset, unset, WidthForMargin(winWidth, pathExample1, 20))
         pathExample2.Move(unset, unset, WidthForMargin(winWidth, pathExample2, 20))
+
+        ; ---- Parent Window Title match Examples
+        parentExamplesText := helpGui.AddText("xm y+10 " txtWStr, "Parent Title Match Examples: ")
+        parentExamplesText.SetFont("italic")
+        parentExample1 := helpGui.AddText("xm+15 y+5 " txtWStr, "• A conditional value of '*YouTube*' would match if the dialog was opened by a browser tab titled `"Channel Dashboard - YouTube Studio`", for example. ")
+        parentExample1.Move(unset, unset, WidthForMargin(winWidth, pathExample1, 20))
 
 
         ; Paths Section
