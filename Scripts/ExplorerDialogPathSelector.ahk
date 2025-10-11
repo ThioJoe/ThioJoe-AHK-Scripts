@@ -893,55 +893,50 @@ class ExplorerDialogPathSelector {
             }
         }
 
-        ; Display conditional favorites - Exe name condition
+        ; Loop through the conditional favorites once and group them into a new object so we don't have to loop them all every time
+        groupedConditionalFavorites := Map()
         for conditionalFavorite in this.g_pth_Settings.conditionalFavorites {
-            if (conditionalFavorite.conditionType = ExplorerDialogPathSelector.ConditionType.DialogOwnerExe.StringID) {
-                for conditionExeValue in conditionalFavorite.ConditionValues {
-                    if (this.StringMatchWithWildcards(windowExe, conditionExeValue)) {
-                        InsertMenuItem(CurrentLocations, "Conditional Favorites - Executable Match", unset, unset, unset, unset) ; Header
-                        ; Add all the paths
-                        for conditionPath in conditionalFavorite.Paths {
-                            InsertMenuItem(CurrentLocations, this.g_pth_settings.standardEntryPrefix conditionPath, conditionPath, A_WinDir . "\system32\imageres.dll", "-81", false) ; Conditional Favorite Path
-                            hasItems := true
-                        }
-                        break ; No need to keep going if we found a match
-                    }
-                }
-            }
+            if !groupedConditionalFavorites.Has(conditionalFavorite.conditionType)
+                groupedConditionalFavorites[conditionalFavorite.conditionType] := []
+            groupedConditionalFavorites[conditionalFavorite.conditionType].Push(conditionalFavorite)
         }
 
-        ; Display conditional favorites - Current dialog path condition
-        for conditionalFavorite in this.g_pth_Settings.conditionalFavorites {
-            if (conditionalFavorite.conditionType = ExplorerDialogPathSelector.ConditionType.CurrentDialogPath.StringID) {
-                for conditionPathValue in conditionalFavorite.ConditionValues {
-                    if (this.StringMatchWithWildcards(windowPath, conditionPathValue)) {
-                        InsertMenuItem(CurrentLocations, "Conditional Favorites - Path Match", unset, unset, unset, unset) ; Header
-                        ; Add all the paths
-                        for conditionPath in conditionalFavorite.Paths {
-                            InsertMenuItem(CurrentLocations, this.g_pth_settings.standardEntryPrefix conditionPath, conditionPath, A_WinDir . "\system32\imageres.dll", "-81", false) ; Conditional Favorite Path
-                            hasItems := true
-                        }
-                        break ; No need to keep going if we found a match
-                    }
-                }
-            }
-        }
+        for conditionType in ExplorerDialogPathSelector.ConditionType.OwnProps() {
+            local stringToMatch := ""
+            local sectionHeader := ""
 
-        ; Display conditional favorites - Parent process title condition
-        for conditionalFavorite in this.g_pth_Settings.conditionalFavorites {
-            if (conditionalFavorite.conditionType = ExplorerDialogPathSelector.ConditionType.ParentWindowTitle.StringID) {
-                for conditionPathValue in conditionalFavorite.ConditionValues {
-                    if (this.StringMatchWithWildcards(parentWindowTitle, conditionPathValue)) {
-                        InsertMenuItem(CurrentLocations, "Conditional Favorites - Parent Match", unset, unset, unset, unset) ; Header
-                        ; Add all the paths
-                        for conditionPath in conditionalFavorite.Paths {
-                            InsertMenuItem(CurrentLocations, this.g_pth_settings.standardEntryPrefix conditionPath, conditionPath, A_WinDir . "\system32\imageres.dll", "-81", false) ; Conditional Favorite Path
-                            hasItems := true
+            if (conditionType = "__Init" || conditionType = "Prototype") {
+                continue
+            } else if (conditionType = ExplorerDialogPathSelector.ConditionType.DialogOwnerExe.StringID) {
+                itemToMatch := windowExe
+                sectionHeader := "Conditional Favorites - Executable Match"
+            } else if (conditionType = ExplorerDialogPathSelector.ConditionType.CurrentDialogPath.StringID) {
+                itemToMatch := windowPath
+                sectionHeader := "Conditional Favorites - Path Match"
+            } else if (conditionType = ExplorerDialogPathSelector.ConditionType.ParentWindowTitle.StringID) {
+                itemToMatch := parentWindowTitle
+                sectionHeader := "Conditional Favorites - Parent Match"
+            }
+
+            ; Enter the group if it exists
+            if groupedConditionalFavorites.Has(conditionType) {
+                currentGroup := groupedConditionalFavorites[conditionType]
+                ; Per-Group loop
+                for favorite in currentGroup {
+                    ; Users can set multiple conditions match strings per conditional favorite entry
+                    for conditionValue in favorite.ConditionValues {
+                        if (this.StringMatchWithWildcards(itemToMatch, conditionValue)) {
+                            InsertMenuItem(CurrentLocations, sectionHeader, unset, unset, unset, unset) ; Header
+                            ; Users can set multiple paths to show per conditional favorite entry upon a match
+                            for conditionPath in favorite.Paths {
+                                InsertMenuItem(CurrentLocations, this.g_pth_settings.standardEntryPrefix conditionPath, conditionPath, A_WinDir . "\system32\imageres.dll", "-81", false) ; Conditional Favorite Path
+                                hasItems := true
+                            }
+                            break ; No need to keep going if we found a match
                         }
-                        break ; No need to keep going if we found a match
                     }
                 }
-            }
+            }            
         }
 
         ; Only get Directory Opus paths if dopusRTPath is set
@@ -1187,7 +1182,7 @@ class ExplorerDialogPathSelector {
             ; Restore the original file name if it was there
             if (originalFileName != "") {
                 ControlSetText(originalFileName, "Edit1", "ahk_id " windowHwnd)
-            } else{
+            } else {
                 OutputDebug("`n`nOriginal file name not found or no file name box handle")
             }
         }
