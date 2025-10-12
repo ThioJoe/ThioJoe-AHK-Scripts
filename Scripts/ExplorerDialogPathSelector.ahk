@@ -349,6 +349,11 @@ class ExplorerDialogPathSelector {
             FriendlyName: "Parent Process Window Title",
             Description: "If the dialog window was opened by a window who's title matches the value. ( * is a wildcard )"
         }
+        static DialogFileTypeFilter := {
+            StringID: "DialogFileTypeFilter",
+            FriendlyName: "Dialog File Type Filter",
+            Description: "If the dialog window filters for file extensions that matches the value. ( * is a wildcard )"
+        }
     }
 
     ; Check for match using strings with wildcard asterisks
@@ -856,6 +861,11 @@ class ExplorerDialogPathSelector {
             return
         }
 
+        local parentWindowTitle := ""
+        local windowPath := ""
+        local windowFilter := ""
+        local windowParent := 0
+
         ; Get the path and other info about the dialog. At this point we know it's the correct type of window
         if (windowHwnd) {
             windowPath := GetDialogAddressBarPath(windowHwnd)
@@ -873,10 +883,13 @@ class ExplorerDialogPathSelector {
                 hwndParent := 0
                 parentWindowTitle := ""
             }
-        } else {
-            windowPath := ""
-            hwndParent := 0
-            parentWindowTitle := ""
+
+            ; Try to get the window filter combobox. Not all windows will have this.
+            try {
+                windowFilter := ControlGetText("ComboBox2", "ahk_id " windowID)
+            } catch {
+                OutputDebug("Couldn't get window filetype filter.")
+            }
         }
 
         ; Proceed to display the menu
@@ -916,6 +929,9 @@ class ExplorerDialogPathSelector {
             } else if (conditionType = ExplorerDialogPathSelector.ConditionType.ParentWindowTitle.StringID) {
                 itemToMatch := parentWindowTitle
                 sectionHeader := "Conditional Favorites - Parent Match"
+            } else if (conditionType = ExplorerDialogPathSelector.ConditionType.DialogFileTypeFilter.StringID) {
+                itemToMatch := windowFilter
+                sectionHeader := "Conditional Favorites - File Filter Match"
             }
 
             ; Enter the group if it exists
@@ -2172,6 +2188,11 @@ class ExplorerDialogPathSelector {
         conditionDesc3 := helpGui.AddText("xm+30 y+2 " txtWStr " +Wrap", "When the title of the parent window (the app window that opened the dialog) contains a specified text string.")
         conditionDesc3.Move(unset, unset, WidthForMargin(winWidth, conditionDesc3, 20))
 
+        conditionLabel3 := helpGui.AddText("xm+15 y+10 " txtWStr, "• " ExplorerDialogPathSelector.ConditionType.DialogFileTypeFilter.FriendlyName)
+        conditionLabel3.SetFont("s10 bold")
+        conditionDesc3 := helpGui.AddText("xm+30 y+2 " txtWStr " +Wrap", "When the dialog window's currently active file type filter matches your pattern. The filter can be the `"Save As Type`" dropdown for Save dialogs, or at the bottom right of Open dialogs. For example `"All Files (*.*)`". Applies to entire string, not just the file extensions.")
+        conditionDesc3.Move(unset, unset, WidthForMargin(winWidth, conditionDesc3, 20))
+
         ; Condition Values Section
         valuesHeader := helpGui.AddText("xm y+20 " txtWStr " h20", "Condition Values:")
         valuesHeader.SetFont("s10 bold underline")
@@ -2205,8 +2226,13 @@ class ExplorerDialogPathSelector {
         parentExamplesText := helpGui.AddText("xm y+10 " txtWStr, "Parent Title Match Examples: ")
         parentExamplesText.SetFont("italic")
         parentExample1 := helpGui.AddText("xm+15 y+5 " txtWStr, "• A conditional value of '*YouTube*' would match if the dialog was opened by a browser tab titled `"Channel Dashboard - YouTube Studio`", for example. ")
-        parentExample1.Move(unset, unset, WidthForMargin(winWidth, pathExample1, 20))
+        parentExample1.Move(unset, unset, WidthForMargin(winWidth, parentExample1, 20))
 
+        ; ---- Filetype filter Example
+        filterExampleText := helpGui.AddText("xm y+10 " txtWStr, "File Type Filter Match Examples: ")
+        filterExampleText.SetFont("italic")
+        filterExample1 := helpGui.AddText("xm+15 y+5 " txtWStr, "• If a Open/Save dialog's file type filter is `"Text Documents (*.txt)`", you could match with *.txt* or *Text* or even *Document* for example")
+        filterExample1.Move(unset, unset, WidthForMargin(winWidth, filterExample1, 20))
 
         ; Paths Section
         pathsHeader := helpGui.AddText("xm y+20 " txtWStr " h20", "Paths:")
