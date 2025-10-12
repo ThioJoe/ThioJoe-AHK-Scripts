@@ -1696,13 +1696,19 @@ class ExplorerDialogPathSelector {
 
         currentlyEditedRow := -1
 
-        ; Map condition type dropdown integers to conditionTypes
-        ConditionTypeIndex := Map(
-            ExplorerDialogPathSelector.ConditionType.DialogOwnerExe.StringID, 1,
-            ExplorerDialogPathSelector.ConditionType.CurrentDialogPath.StringID, 2,
-            ExplorerDialogPathSelector.ConditionType.ParentWindowTitle.StringID, 3
-        )
-        ; Track currently edited row
+        ; Automatically build a Map/Dictionary of the condition types as keys and incremental integer as an index for the dropdown
+        local ConditionTypeIndexDict := Map()
+        local dropdownFriendlyArray := []
+        local iCondition := 1
+        for conditionTypeStr in ExplorerDialogPathSelector.ConditionType.OwnProps() {
+            ; Skip built in properties
+            if (conditionTypeStr = "__Init" || conditionTypeStr = "Prototype")
+                continue
+            ConditionTypeIndexDict[conditionTypeStr] := iCondition
+            dropdownFriendlyArray.Push(ExplorerDialogPathSelector.ConditionType.%conditionTypeStr%.FriendlyName)
+            iCondition++
+        }
+
         currentRowNum := 0
         
         ; Create the main window
@@ -1721,7 +1727,7 @@ class ExplorerDialogPathSelector {
         addBtn := pathGui.AddButton("w80", "Add New")
         addBtn.OnEvent("Click", AddEntry)
         editBtn := pathGui.AddButton("x+10 yp w80", "Edit")
-        editBtn.OnEvent("Click", EditEntry)
+        editBtn.OnEvent("Click", EditOrCancelEditEntry)
         removeBtn := pathGui.AddButton("x+10 yp w80", "Remove")
         removeBtn.OnEvent("Click", RemoveEntry)
         helpBtn := pathGui.AddButton("x+10 yp w80", "Help")
@@ -1732,13 +1738,7 @@ class ExplorerDialogPathSelector {
         
         ; Condition Type dropdown
         pathGui.AddText("xp+10 yp+20", "Condition Value Type:")
-        typeDropdown := pathGui.AddDropDownList("w200 vConditionType Choose1", 
-                [
-                ExplorerDialogPathSelector.ConditionType.DialogOwnerExe.FriendlyName, 
-                ExplorerDialogPathSelector.ConditionType.CurrentDialogPath.FriendlyName,
-                ExplorerDialogPathSelector.ConditionType.ParentWindowTitle.FriendlyName
-                ]
-            )
+        typeDropdown := pathGui.AddDropDownList("w200 vConditionType Choose1", dropdownFriendlyArray)
         typeDropdown.OnEvent("Change", ShowConditionTypeDescription)
         ; Condition Type Description text - Shows next to the dropdown
         typeDescription := pathGui.AddText("x+10 yp+10 w150 +Wrap", ExplorerDialogPathSelector.ConditionType.CurrentDialogPath.Description)
@@ -1761,7 +1761,8 @@ class ExplorerDialogPathSelector {
         applyBtn.OnEvent("Click", ValidateAndApplyEntry)
             
         ; Initially disable edit panel controls
-        EnableEditPanel(false)
+        EnableDisableEditPanel(false, -1)
+        local isEditing := false
 
         ; Set initial sizes
         initialWindowWidth := 600
@@ -1803,7 +1804,11 @@ class ExplorerDialogPathSelector {
             listView.ModifyCol(columnIndex, currentWidth + increaseAmount)
         }
 
-        PopulateListView() {
+        /**
+         * Recreate the listview with the condition table.
+         * @param {Integer|null} rowToSelect If unset or 0, will not select any. If a number is set, that row will be selected (1-index based). If -1, will select the last item.
+         */
+        PopulateListView(rowToSelect := unset) {
             listView.Delete()
 
             ; Create strings to show in ListView
@@ -1812,7 +1817,13 @@ class ExplorerDialogPathSelector {
             for entry in pendingConditionalFavorites {
                 valueString := JoinDelimited(entry.ConditionValues, "; ")
                 pathString := JoinDelimited(entry.Paths, "; ")
-                listView.Add(unset, entry.Index, entry.ConditionTypeName, valueString, pathString)
+
+                if (IsSet(rowToSelect) and (rowToSelect = -1) and (entry.Index = pendingConditionalFavorites.Length))
+                    listView.Add("Select", entry.Index, entry.ConditionTypeName, valueString, pathString)
+                else if (IsSet(rowToSelect) and (rowToSelect = entry.Index))
+                    listView.Add("Select", entry.Index, entry.ConditionTypeName, valueString, pathString)
+                else
+                    listView.Add(unset, entry.Index, entry.ConditionTypeName, valueString, pathString)                
             }
 
             ; Set column widths
@@ -1836,9 +1847,9 @@ class ExplorerDialogPathSelector {
         ; Helper function to show the description for the selected condition type
         ShowConditionTypeDescription(*) {
             dropdownIndex := typeDropdown.Value
-            for key, value in ConditionTypeIndex {
+            for key, value in ConditionTypeIndexDict {
                 if (value = dropdownIndex) {
-                    ; Since 'key' will be the StringID, we need to find the matching enum value
+                    ; Since 'key' will be the StringID, we need to find the matching enum value, we can dynamically access properties with %% syntax.
                     typeDescription.Value := ExplorerDialogPathSelector.ConditionType.%key%.Description
                     break
                 }
@@ -1855,23 +1866,50 @@ class ExplorerDialogPathSelector {
             return ""
         }
         
-        ; Function to enable/disable edit panel
-        EnableEditPanel(enable := true) {
+        /**
+         * Enable or disable the edit panel.
+         * @overload
+         * @param {true} enable True to enable the edit panel for a specific row.
+         * @param {Number} numToEdit The row number to edit.
+        */
+        /**
+         * Enable or disable the edit panel.
+         * @overload
+         * @param {false} enable False to disable the edit panel.
+         * @param {-1} numToEdit When 
+         */
+        EnableDisableEditPanel(enable := true, numToEdit) {
             typeDropdown.Enabled := enable
             valuesEdit.Enabled := enable
             pathsEdit.Enabled := enable
-        }
 
-        UpdateActiveSelectedRow(num) {
-            currentlyEditedRow := num
-            labelActiveSelection.Value := "Currently Editing: #" num
-            labelActiveSelection.SetFont("s10 Bold cRed")
+            if (enable) {
+                isEditing := true
+                editBtn.Text := "Cancel Edit"
+
+                currentlyEditedRow := numToEdit
+                labelActiveSelection.Value := "Currently Editing: #" numToEdit
+                labelActiveSelection.SetFont("s10 Bold cRed")
+
+                listView.Enabled := false
+            } else {
+                valuesEdit.Value := ""
+                pathsEdit.Value := ""
+                editBtn.Text := "Edit"
+                isEditing := false
+
+                currentlyEditedRow := -1
+                labelActiveSelection.Value := "Currently Editing: [None]"
+                labelActiveSelection.SetFont() ; Default same as pathGUI object
+                labelActiveSelection.SetFont("cDefault") ; The above is supposed to reset the color too but it doesn't so we do it like this
+
+                listView.Enabled := true
+            } 
         }
-    
+   
         ; Handle adding new entry
         AddEntry(*) {
-            EnableEditPanel(true)
-            typeDropdown.Value := ConditionTypeIndex[ExplorerDialogPathSelector.ConditionType.DialogOwnerExe.StringID] ; Initial default but can be changed by user
+            typeDropdown.Value := ConditionTypeIndexDict[ExplorerDialogPathSelector.ConditionType.DialogOwnerExe.StringID] ; Initial default but can be changed by user
             valuesEdit.Value := ""
             pathsEdit.Value := ""
             ; Create new entry object in pendingConditionalFavorites - Use default placeholders
@@ -1884,20 +1922,29 @@ class ExplorerDialogPathSelector {
             }
             pendingConditionalFavorites.Push(entry)
             ; Add new entry to ListView
-            PopulateListView()
+            PopulateListView(-1)
             ; Update the current 
-            UpdateActiveSelectedRow(entry.Index)
+            EnableDisableEditPanel(true, entry.Index)
         }
         
         ; Handle editing selected entry
-        EditEntry(*) {
-            if (currentRowNum := listView.GetNext()) {
-                EnableEditPanel(true)
+        EditOrCancelEditEntry(*) {
+            currentRowNum := listView.GetNext()
+            if (currentRowNum > 0)
                 entry := pendingConditionalFavorites[currentRowNum] ; The index in the array is 0-based, but the ListView index is 1-based
-                typeDropdown.Value := ConditionTypeIndex[entry.ConditionType]
+
+            ; Already editing, so the user wants to cancel
+            if (isEditing) {
+                EnableDisableEditPanel(false, -1)
+                ; If cancelling editing and the entry was empty to begin with, like after adding new, remove it again
+                if (entry and entry.ConditionValues.Length = 0 and entry.Paths.Length = 0)
+                    RemoveEntry()
+            ; Enable Editing
+            } else if (currentRowNum) {
+                typeDropdown.Value := ConditionTypeIndexDict[entry.ConditionType]
                 valuesEdit.Value := Join(entry.ConditionValues)
                 pathsEdit.Value := Join(entry.Paths)
-                UpdateActiveSelectedRow(entry.Index)
+                EnableDisableEditPanel(true, entry.Index)
             }
         }
         
@@ -1914,6 +1961,7 @@ class ExplorerDialogPathSelector {
             }
 
             PopulateListView()
+            EnableDisableEditPanel(false, -1)
         }
 
         ValidateAndApplyEntry(*) {
@@ -1950,7 +1998,8 @@ class ExplorerDialogPathSelector {
                     return
                 }
 
-                PopulateListView()
+                PopulateListView(currentlyEditedRow)
+                EnableDisableEditPanel(false, -1)
             }
         }
     
