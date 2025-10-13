@@ -687,6 +687,24 @@ class ExplorerDialogPathSelector {
             return ""
         }
 
+        /**
+         * @param windowHwnd 
+         * @returns {String} 
+         */
+        GetDialogFilterComboBoxText(windowHwnd) {
+            controls := WinGetControls(windowHwnd)
+            for controlClassNN in controls {
+                if (controlClassNN ~= "ComboBox") {
+                    controlText := ControlGetText(controlClassNN, windowHwnd)
+                    if (controlText ~= "*") { ; If it contains an asterisk from the start it's gotta be the filter box since that can't be in file names
+                        ; controlHwnd := ControlGetHwnd(controlClassNN, windowHwnd)
+                        return controlText
+                    }
+                }
+            }
+            return ""
+        }
+
         ; Replaces the text in the input string with a bold unicode version of the text for latin characters
         SimulateBoldText(inputText) {
             boldText := ""
@@ -887,6 +905,13 @@ class ExplorerDialogPathSelector {
             ; Try to get the window filter combobox. Not all windows will have this.
             try {
                 windowFilter := ControlGetText("ComboBox2", "ahk_id " windowID)
+                ; If it doesn't contain an asterisk it's probably not the right box so we'll do a more thorough search
+                if (!InStr(windowFilter, "*")) {
+                    windowFilterAttempt2 := GetDialogFilterComboBoxText(windowHwnd)
+                    if (windowFilterAttempt2) {
+                        windowFilter := windowFilterAttempt2
+                    }
+                }
             } catch {
                 OutputDebug("Couldn't get window filetype filter.")
             }
@@ -2356,12 +2381,18 @@ class ExplorerDialogPathSelector {
         }
         labelElevatedTip := helpGui.AddLink("xm y+5 w300", elevatedTipText)
 
+        ; Display clickable link to source repo
+        projectPageText := 'Check for updates on the project page: `n <a href="https://github.com/ThioJoe/ThioJoe-AHK-Scripts">https://github.com/ThioJoe/ThioJoe-AHK-Scripts</a>'
+        labelProjectPage := helpGui.AddLink("xm y+0 w300", projectPageText)
+        labelProjectPage.SetFont("s10 bold")
+
+
         ; ------------------------------------------------------------------------
         closeButton := helpGui.AddButton("xm y+10 w80 Default", "Close")
         closeButton.OnEvent("Click", (*) => helpGui.Destroy())
 
         ; Show with specific initial size
-        helpGui.Show("w500 h250")
+        helpGui.Show("w500 h360")
 
         GuiResize(thisGui, minMax, width, height) {
             if minMax = -1  ; The window has been minimized
