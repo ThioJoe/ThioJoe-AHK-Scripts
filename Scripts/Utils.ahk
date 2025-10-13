@@ -421,10 +421,12 @@ static ListAllWindowsForProcess(procString := unset, detectHidden := false) {
  * Gets all the controls of a window as objects from the Windows API, given the window's HWND.
  * Can be used as a replacement for WinGetControls() which only returns control names.
  * @param {Integer} windowHwnd The window handle to enumerate controls for
- * @param {Bool} getText Whether to also get the text of each control (default: false)
+ * @param {Boolean} getText Whether to also get the text of each control (default: false)
+ * @param {String} filterClassNN Optional classNN filter to only include controls whose classNN contains this substring (default: unset)
+ * @param {String} filterText Optional text filter to only include controls whose text contains this substring (default: unset)
  * @returns {ControlInfo[]} Array of custom control objects with properties: Class, ClassNN, ControlID, Hwnd, and optionally Text
  */
-static GetAllControlsAsObjects_ViaWindowsAPI(windowHwnd, getText := unset) {
+static GetAllControlsAsObjects_ViaWindowsAPI(windowHwnd, getText := unset, filterClassNN := unset, filterText := unset) {
     ; ---------------- Local Functions ----------------
     EnumChildProc(hwnd, lParam) {
         controlsArray := ObjFromPtrAddRef(lParam)
@@ -450,8 +452,23 @@ static GetAllControlsAsObjects_ViaWindowsAPI(windowHwnd, getText := unset) {
             controlObject.Text := text
         }
 
+        ; ; Add control info to the array
+        ; if (!IsSet(filterText) and !IsSet(filterName))
+        ;     controlsArray.Push(controlObject)
+        ; else if (IsSet(getText) and controlObject.Text && InStr(controlObject.Text, filterText))
+        ;     controlsArray.Push(controlObject)
+
         ; Add control info to the array
-        controlsArray.Push(controlObject)
+        if (!IsSet(filterText) and !IsSet(filterClassNN)) {
+            controlsArray.Push(controlObject)
+        } else {
+            textMatch := !IsSet(filterText) or (IsSet(getText) and controlObject.Text and InStr(controlObject.Text, filterText))
+            nameMatch := !IsSet(filterClassNN) or (controlObject.ClassNN and InStr(controlObject.ClassNN, filterClassNN))
+
+            if (textMatch and nameMatch) {
+                controlsArray.Push(controlObject)
+            }
+        }
 
         return true  ; Continue enumeration
     }
