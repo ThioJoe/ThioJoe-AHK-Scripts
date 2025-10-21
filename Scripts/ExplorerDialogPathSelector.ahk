@@ -24,7 +24,7 @@ SetWorkingDir(A_ScriptDir)
 
 ; Set global variables about the program and compiler directives. These use regex to extract data from the lines above them (A_PriorLine)
 ; Keep the line pairs together!
-global g_pathSelector_version := "1.5.0.0"
+global g_pathSelector_version := "1.6.0.0"
 ;@Ahk2Exe-Let ProgramVersion=%A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 global g_pathSelector_programName := "Explorer Dialog Path Selector"
@@ -43,13 +43,18 @@ global g_pathSelector_programName := "Explorer Dialog Path Selector"
 ;@Ahk2Exe-SetCopyright ThioJoe
 ;@Ahk2Exe-SetDescription Explorer Dialog Path Selector
 
+; This line shouldn't have an actual effect (Only applies to hotkeys defined with double colon), we only need it because if using the HotIf function inside, it needs to match a HotIf string
+; HotIf block is also ended at the end of this script file to be sure it doesn't affect other hotkeys outside this script
+#HotIf ExplorerDialogPathSelector.MouseIsOverDialogWindow() ; Makes hotkeys only active when the mouse is over a dialog window
+
 global EDPS := unset
 ; Create an instance of the class and set it as the main instance
 if (autoCreateInstance) {
     ; Technically the setAsMainInstance argument is not necessary because we're assigning it to EDPS anyway
-    EDPS := ExplorerDialogPathSelector(unset, unset, false, true) 
+    EDPS := ExplorerDialogPathSelector(unset, unset, false, true)
 }
 
+; ------------------------------------------ MAIN CLASS DEFINITION ----------------------------------------------------
 class ExplorerDialogPathSelector {
     ; Class level properties to hold current settings
     g_pth_Settings := {}
@@ -68,13 +73,19 @@ class ExplorerDialogPathSelector {
     }
 
     ; Need to bind certain function objects that are used in callbacks
-    ; Used for the hotkey to show the menu
-    boundDisplayFunc := this.DisplayDialogPathMenu.Bind(this)
+    boundDisplayFunc := this.DisplayDialogPathMenu.Bind(this)  ; Used for the hotkey to show the menu
     ShowPathSelectorSettingsGUI_Bound := this.ShowPathSelectorSettingsGUI.Bind(this)
     ShowPathSelectorHelpWindow_Bound := this.ShowPathSelectorHelpWindow.Bind(this)
 
-    ; Constructor
-    __New(settingsObject :=  ExplorerDialogPathSelector.Settings(), systemTraySettingsObject := ExplorerDialogPathSelector.SystemTraySettings(), dontLoadSettingsFile := false, setAsMainInstance := unset) {
+    ; Set constants. Doing this outside constructor or else it won't work.
+    static windowClassesPattern := "^(?i:#32770|ConsoleWindowClass|SunAwtDialog)$"
+
+    ;@region Constructor
+    __New(settingsObject :=  ExplorerDialogPathSelector.Settings(), systemTraySettingsObject := ExplorerDialogPathSelector.SystemTraySettings(), dontLoadSettingsFile := false, setAsMainInstance := unset) {     
+
+        ; Set this same as the static property so it can be used in instance methods
+        this.windowClassesPattern := ExplorerDialogPathSelector.windowClassesPattern
+
         ; Assign the localized strings needed for the script
         this.GetNecessaryLocalizedStrings()
 
@@ -165,11 +176,14 @@ class ExplorerDialogPathSelector {
         return newObj
     }
 
+    ;@region Defaults
     ; ---------------------------------------- DEFAULT USER SETTINGS ----------------------------------------
     ; These will be overridden by settings in the settings ini file if it exists. Otherwise these defaults will be used.
     class Settings {
         ; Hotkey to show the menu. Default is Middle Mouse Button. If including this script in another script, you could choose to set this hotkey in the main script and comment this line out
         dialogMenuHotkey := "~MButton"
+        ; Whether to enable the HotIf condition to only have the hotkey active when the mouse is over a dialog window. We'll call this 'pre-detection' of dialog window for user clarity
+        useHotIfPreDetection := true
         ; Enable debug mode to show tooltips with debug info
         enableExplorerDialogMenuDebug := false
         ; Whether to show the disabled clipboard path menu item when no valid path is found on the clipboard, or only when a valid path is found on the clipboard
@@ -223,6 +237,7 @@ class ExplorerDialogPathSelector {
 
     ; ---------------------------------------- INITIALIZATION FUNCTIONS AND CLASSES  ----------------------------------------------
 
+    ;@region Hotkey
     ; Updates the hotkey. If no new hotkey is provided, it will use the hotkey from settings
     UpdateHotkey(newHotkey := "", previousHotkeyString := "") {
         ; Use the hotkey from settings if no new hotkey is provided
@@ -230,24 +245,60 @@ class ExplorerDialogPathSelector {
             newHotkey := this.g_pth_Settings.dialogMenuHotkey
         }
 
-        ; If the new hotkey is the same as before, return. Otherwise it will disable itself and re-enable itself unnecessarily
-        ; By now newHotkey should have a value either from being set or from the settings
-        if (newHotkey = "") or (newHotkey = previousHotkeyString)
-            return
+        ; ; If the new hotkey is the same as before, return. Otherwise it will disable itself and re-enable itself unnecessarily
+        ; ; By now newHotkey should have a value either from being set or from the settings
+        ; if (newHotkey = "") or (newHotkey = previousHotkeyString)
+        ;     return
 
+        ; First we'll disable the previous hotkey if it exists
+        ; To do this correctly, we'll need to enter the same HotIf context that was used when setting the hotkey
+        ; Since I'm not aware of any way to check the current HotIf context of a hotkey, we'll do both possibilities here to be safe. 
+        ; But we'll need to use try/catch because if the hotkey wasn't set in that context, it will error out
         if (previousHotkeyString != "") {
+            local inContextError := ""
+            local noContextError := ""
+
+            ; First disable with no HotIf context
             try {
+                HotIf()
                 HotKey(previousHotkeyString, "Off")
             } catch Error as hotkeyUnsetErr {
-                MsgBox("Error disabling previous hotkey: " hotkeyUnsetErr.Message "`n`nHotkey Attempted to Disable:`n" previousHotkeyString "`n`nWill still try to set new hotkey.")
+                ;MsgBox("Error disabling previous hotkey: " hotkeyUnsetErr.Message "`n`nHotkey Attempted to Disable:`n" previousHotkeyString "`n`nWill still try to set new hotkey (" newHotkey ").")
+                inContextError := hotkeyUnsetErr.Message
+            }
+
+            ; Then disable with HotIf context
+            try {
+                HotIf('ExplorerDialogPathSelector.MouseIsOverDialogWindow()')
+                HotKey(previousHotkeyString, "Off")
+            } catch Error as hotkeyUnsetErr {
+                ;MsgBox("Error disabling previous hotkey in HotIf context: " hotkeyUnsetErr.Message "`n`nHotkey Attempted to Disable:`n" previousHotkeyString "`n`nWill still try to set new hotkey (" newHotkey ").")
+                noContextError := hotkeyUnsetErr.Message
+            }
+
+            ; We'll usually expect one of them to error, but if both attempts errored out, show a message
+            if (inContextError and noContextError) {
+                MsgBox("Error disabling previous hotkey in HotIf context. `n`nHotkey Attempted to Disable:`n" previousHotkeyString "`n`nWill still try to set new hotkey (" newHotkey "). `n`nErrors:`nWith HotIf Context: " inContextError "`nWithout HotIf Context: " noContextError)
             }
         }
+
+        ; Set the proper HotIf context based on settings and new hotkey, and set the new hotkey
+        ;    But if the hotkey starts with a '~', don't bother using HotIf because the '~' makes it not block the key anyway
+        if (this.g_pth_settings.useHotIfPreDetection = true && !(InStr(newHotkey, "~", "Off") = true))
+            HotIf('ExplorerDialogPathSelector.MouseIsOverDialogWindow()')
+        ; End any previous HotIf block if not using HotIf. This makes the hotkey always active
+        else
+            HotIf()
 
         try {
             HotKey(newHotkey, this.boundDisplayFunc, "On") ; Include 'On' option to ensure it's enabled if it had been disabled before, like changing the hotkey back again
         } catch Error as hotkeySetErr {
             MsgBox("Error setting hotkey: " hotkeySetErr.Message "`n`nHotkey was trying to be set to:`n" newHotkey)
         }
+
+        ; End any HotIf block regardless of whether we used it or not to keep it simple. This avoids affecting other hotkeys outside this class. But the HotIf condition was still applied to the hotkey above (if set to do so)
+        HotIf()
+
     }
 
     ; Loads Windows resources to get localized versions of strings that are used to locate dialogs and their controls
@@ -309,6 +360,7 @@ class ExplorerDialogPathSelector {
         }
     }
 
+    ;@region Utility Funcs
     ; ---------------------------------------- UTILITY FUNCTIONS  ----------------------------------------------
     ; Function to check if the script is running standalone or included in another script
     ThisScriptRunningStandalone() {
@@ -370,6 +422,21 @@ class ExplorerDialogPathSelector {
         } else {
             return true
         }
+    }
+
+    ; Return the classNN of the control currently under the mouse cursor
+    static GetMouseOverClassNN() {
+        MouseGetPos(unset, unset, &hWnd)
+        local windowClassNN := WinGetClass("ahk_id " hWnd)
+        return windowClassNN
+    }
+
+    ; static MouseIsOverDialogWindow(*) => this.GetMouseOverClassNN() ~= this.windowClassesPattern
+    static MouseIsOverDialogWindow(*) { ; More expanded version for debugging
+        local classNN := this.GetMouseOverClassNN()
+        local result := classNN ~= this.windowClassesPattern
+        OutputDebug(result . " | " . classNN . "`n")
+        return result
     }
 
     /**
@@ -511,8 +578,8 @@ class ExplorerDialogPathSelector {
         }
     }
 
+    ;@region Main Funcs
     ; ------------------------------------ MAIN LOGIC FUNCTIONS ---------------------------------------------------
-
     ; Get the paths of all tabs from all Windows of Windows Explorer, and identify which are the active tab for each window
     GetAllExplorerPaths() {
         paths := []
@@ -630,6 +697,7 @@ class ExplorerDialogPathSelector {
         }
     }
 
+    ;@region Build Menu
     ; Display the menu
     DisplayDialogPathMenu(thisHotkey) { ; Called via the Hotkey function, so it must accept the hotkey as its first parameter
         ; ------------------------- LOCAL FUNCTIONS -------------------------
@@ -812,8 +880,9 @@ class ExplorerDialogPathSelector {
         }
 
         ; ------------------------------------------------------------------------
+        ;@region >Parse Dialog
 
-        debugMode := this.g_pth_Settings.enableExplorerDialogMenuDebug
+        static debugMode := this.g_pth_Settings.enableExplorerDialogMenuDebug
         maxMenuLength := this.g_pth_Settings.maxMenuLength
 
         if (debugMode) {
@@ -866,7 +935,7 @@ class ExplorerDialogPathSelector {
         }
 
         ; Don't display menu unless it's a dialog or console window
-        if !(windowClass ~= "^(?i:#32770|ConsoleWindowClass|SunAwtDialog)$") {
+        if !(windowClass ~= this.windowClassesPattern) {
             if (debugMode) {
                 tooltipText := "Window class does not match expected. Detected: " windowClass
                 if (windowClass = "CabinetWClass") {
@@ -917,6 +986,7 @@ class ExplorerDialogPathSelector {
             }
         }
 
+        ;@region >Collect Paths
         ; Proceed to display the menu
         CurrentLocations := Menu()
         hasItems := false
@@ -1106,9 +1176,18 @@ class ExplorerDialogPathSelector {
             ToolTip()
         }
 
-        ; Show menu if we have items, otherwise show tooltip
+        ; Show the path selection menu if we have items, otherwise show tooltip
         if (hasItems) {
-            CurrentLocations.Show()
+            ; If the current AHK version is v2.1-alpha.1+, we can use the new 'wait' param with .Show().
+            if (VerCompare(A_AhkVersion, "2.1-alpha.1") >= 0) {
+                ; First 2 params are X,Y.
+                ; 3rd param is 'Wait' bool, setting to false allows hotkey to keep working even if menu is open (applies MNS_MODELESS menu style).
+                ; NOTE - Currently setting 'Wait' to true like default because for some reason the menu items aren't clickable when false. Might need to use Dllcall anyway.
+                    ; See: https://www.autohotkey.com/docs/alpha/lib/Menu.htm
+                CurrentLocations.Show(unset, unset, true) 
+            } else {
+                CurrentLocations.Show()
+            }
         } else {
             ToolTip("No folders open")
             SetTimer(RemoveToolTip, 1000)
@@ -1134,6 +1213,7 @@ class ExplorerDialogPathSelector {
     ;     return
     ; }
 
+    ;@region Navigation
     ; Callback function to navigate to a path. The first 3 parameters are provided by the .Add method of the Menu object
     ; The other two parameters must be provided using .Bind when specifying this function as a callback!
     Navigate(ThisMenuItemName, ThisMenuItemPos, MyMenu, f_path, windowClass, windowID) {
@@ -1242,6 +1322,7 @@ class ExplorerDialogPathSelector {
             return ""
         }
 
+        ;@region >Detect Type
         DetectDialogType(hwnd) {
             try {
                 addressbarHwnd := GetDialogAddressbarHwnd(hwnd)
@@ -1321,6 +1402,7 @@ class ExplorerDialogPathSelector {
         }
     }
 
+    ;@region Legacy Nav
     NavigateLegacyFolderDialog(path, hTV) {
         ; Helper function to navigate to a node with the given text under the given parent item
         NavigateToNode(treeView, parentItem, nodeText, isDriveLetter := false) {
@@ -1436,10 +1518,12 @@ class ExplorerDialogPathSelector {
         ; Send("{Enter}")
     }
 
+
     ; ----------------------------------------------------------------------------------------------
     ; ---------------------------------------- GUI-RELATED  ----------------------------------------
     ; ----------------------------------------------------------------------------------------------
 
+    ;@region Settings GUI
     ; Function to show the settings GUI
     ShowPathSelectorSettingsGUI(*) {
         ; ---------------------------------------- LOCAL FUNCTIONS ----------------------------------------
@@ -1461,8 +1545,11 @@ class ExplorerDialogPathSelector {
         labelHotkey := settingsGui.AddText("xm y10 w120 h23 +0x200", "Menu Hotkey:")
         hotkeyEdit := settingsGui.AddEdit("x+10 yp w200", this.g_pth_Settings.dialogMenuHotkey)
         hotkeyEdit.SetFont("s12", "Consolas")
-        labelhotkeyTooltipText := "Enter the key or key combination that will trigger the dialog menu (Using AutoHotkey V2 syntax)`n`nSee `"Help`" menu for link to documentation about key names."
-        labelhotkeyTooltipText .= "`n`nTip: Add a tilde (~) before the key to ensure the hotkey doesn't block the key's normal functionality.`nExample:  ~MButton"
+        labelhotkeyTooltipText := "Enter the key or key combination that will trigger the dialog menu (Using AutoHotkey V2 syntax)`n  > See `"Help`" menu for link to documentation about key names."
+        labelhotkeyTooltipText .= "`n`nTip:`n    Adding a tilde (~) before the key name makes the key also retain its normal functionality and not block it."
+        labelhotkeyTooltipText .= "`n        • Example:  ~MButton"
+        labelhotkeyTooltipText .= "`n    But this may result in accidentally clicking something within the dialog when using the hotkey."
+        labelhotkeyTooltipText .= "`n`n  NOTE: If you don't include the '~' prefix, be sure Pre-Detection mode is enabled so the key isn't otherwise blocked system-wide."
         ExplorerDialogPathSelector.AddTooltipToControl(hTT, labelHotkey.Hwnd, labelhotkeyTooltipText)
         ExplorerDialogPathSelector.AddTooltipToControl(hTT, hotkeyEdit.Hwnd, labelhotkeyTooltipText)
 
@@ -1510,6 +1597,15 @@ class ExplorerDialogPathSelector {
         debugCheck.Value := this.g_pth_Settings.enableExplorerDialogMenuDebug
         labelDebugCheckTooltipText := "Show tooltips with debug information when the hotkey is pressed.`nUseful for troubleshooting."
         ExplorerDialogPathSelector.AddTooltipToControl(hTT, debugCheck.Hwnd, labelDebugCheckTooltipText)
+
+        ; Pre-Detection Mode - Checkbox
+        HotIfPreDetectCheck := settingsGui.AddCheckbox("xm y+5", "Enable Pre-Detection Mode")
+        HotIfPreDetectCheck.Value := this.g_pth_Settings.useHotIfPreDetection
+        labelHotIfPreDetectCheckTooltipText := "If enabled, the Hotkey will not be blocked system-wide even if the hotkey doesn't have the '~' prefix."
+        labelHotIfPreDetectCheckTooltipText .= "`nIf disabled, you'll need to add the '~' prefix to the hotkey, otherwise that key will be blocked system-wide."
+        labelHotIfPreDetectCheckTooltipText .= "`n`nThe reason this is optional is because Pre-Detection theoretically could add a tiny (though likely imperceptible) latency to that hotkey key system-wide."
+        labelHotIfPreDetectCheckTooltipText .= "`n`nNote: If a hotkey with '~' prefix is used, Pre-detection is auto-disabled behind the scenes regardless of this checkbox setting, because it is not necessary."
+        ExplorerDialogPathSelector.AddTooltipToControl(hTT, HotIfPreDetectCheck.Hwnd, labelHotIfPreDetectCheckTooltipText)
 
         ; Always Show Clipboard Menu Item - Checkbox
         clipboardCheck := settingsGui.AddCheckbox("xm y+5", "Always Show Clipboard Menu Item")
@@ -1618,6 +1714,7 @@ class ExplorerDialogPathSelector {
             useBoldTextActiveCheck := this.DefaultSettings.useBoldTextActive
             standardPrefixEdit.Value := this.DefaultSettings.standardEntryPrefix
             debugCheck.Value := this.DefaultSettings.enableExplorerDialogMenuDebug
+            HotIfPreDetectCheck.Value := this.DefaultSettings.useHotIfPreDetection
             clipboardCheck.Value := this.DefaultSettings.alwaysShowClipboardmenuItem
             groupByWindowCheck.Value := this.DefaultSettings.groupPathsByWindow
             UIAccessCheck.Value := this.DefaultSettings.enableUIAccess
@@ -1630,6 +1727,7 @@ class ExplorerDialogPathSelector {
             this.g_pth_Settings.dopusRTPath := dopusPathEdit.Value
             this.g_pth_Settings.activeTabPrefix := prefixEdit.Value
             ;g_settings.activeTabSuffix := suffixEdit.Value
+            this.g_pth_Settings.useHotIfPreDetection := HotIfPreDetectCheck.Value
             this.g_pth_Settings.useBoldTextActive := useBoldTextActiveCheck.Value
             this.g_pth_Settings.standardEntryPrefix := standardPrefixEdit.Value
             this.g_pth_Settings.enableExplorerDialogMenuDebug := debugCheck.Value
@@ -1722,6 +1820,7 @@ class ExplorerDialogPathSelector {
         }
     }
 
+    ;@region Conditions GUI
     ShowConditionalFavoritesGui(*) {
         ; Create a deep copy of the settings instead of a reference
         pendingConditionalFavorites := []
@@ -2172,6 +2271,7 @@ class ExplorerDialogPathSelector {
         }
     }
 
+    ;@region Help Condition
     ShowConditionalFavoritesHelpWindow(*) {
         helpGui := Gui(unset, "Conditional Favorites - Help")
         helpGui.SetFont("s10", "Segoe UI")
@@ -2279,6 +2379,7 @@ class ExplorerDialogPathSelector {
         closeButton.Focus()
     }
 
+    ;@region Favorites GUI
     ShowFavoritePathsGui(*) {
         ; Create the main window
         pathGui := Gui("+Resize +MinSize400x300", "Favorite Paths Manager")
@@ -2337,6 +2438,7 @@ class ExplorerDialogPathSelector {
         }
     }
 
+    ;@region Help Main
     ShowPathSelectorHelpWindow(*) {
         ; Added MinSize to prevent window from becoming too small
         helpGui := Gui("+Resize +MinSize400x300", g_pathSelector_programName " - Help & Tips")
@@ -2527,7 +2629,7 @@ class ExplorerDialogPathSelector {
     }
 
 
-
+    ;@region Settings File
     SaveSettingsToFile() {
         ; ---------------------------- LOCAL FUNCTIONS ----------------------------
         GetConditionalFavoritesDelimitedString() {
@@ -2584,6 +2686,7 @@ class ExplorerDialogPathSelector {
 
             ; Save all settings to INI file
             IniWrite(this.g_pth_Settings.dialogMenuHotkey, settingsFilePath, "Settings", "dialogMenuHotkey")
+            IniWrite(this.g_pth_Settings.useHotIfPreDetection ? "1" : "0", settingsFilePath, "Settings", "useHotIfPreDetection")
             IniWrite(this.g_pth_Settings.dopusRTPath, settingsFilePath, "Settings", "dopusRTPath")
             ; Put quotes around the prefix and suffix values, otherwise spaces will be trimmed by the OS. The quotes will be removed when the values are read back in.
             IniWrite('"' this.g_pth_Settings.activeTabPrefix '"', settingsFilePath, "Settings", "activeTabPrefix")
@@ -2679,6 +2782,7 @@ class ExplorerDialogPathSelector {
         if FileExist(settingsFilePath) {
             ; Load each setting from the INI file
             this.g_pth_Settings.dialogMenuHotkey := IniRead(settingsFilePath, "Settings", "dialogMenuHotkey", this.DefaultSettings.dialogMenuHotkey)
+            this.g_pth_Settings.useHotIfPreDetection := IniRead(settingsFilePath, "Settings", "useHotIfPreDetection", this.DefaultSettings.useHotIfPreDetection)
             this.g_pth_Settings.dopusRTPath := IniRead(settingsFilePath, "Settings", "dopusRTPath", this.DefaultSettings.dopusRTPath)
             this.g_pth_Settings.activeTabPrefix := IniRead(settingsFilePath, "Settings", "activeTabPrefix", this.DefaultSettings.activeTabPrefix)
             this.g_pth_Settings.activeTabSuffix := IniRead(settingsFilePath, "Settings", "activeTabSuffix", this.DefaultSettings.activeTabSuffix)
@@ -2694,6 +2798,7 @@ class ExplorerDialogPathSelector {
             this.g_pth_settings.conditionalFavorites := ParseConditionalFavoritesString(IniRead(settingsFilePath, "Settings", "conditionalFavorites", ""))
 
             ; Convert string boolean values to actual booleans
+            this.g_pth_Settings.useHotIfPreDetection := this.g_pth_Settings.useHotIfPreDetection = "1"
             this.g_pth_Settings.enableExplorerDialogMenuDebug := this.g_pth_Settings.enableExplorerDialogMenuDebug = "1"
             this.g_pth_Settings.alwaysShowClipboardmenuItem := this.g_pth_Settings.alwaysShowClipboardmenuItem = "1"
             this.g_pth_Settings.groupPathsByWindow := this.g_pth_Settings.groupPathsByWindow = "1"
@@ -2720,6 +2825,7 @@ class ExplorerDialogPathSelector {
         MsgBox(g_pathSelector_programName "`nVersion: " g_pathSelector_version "`n`nAuthor: ThioJoe`n`nProject Repository: https://github.com/ThioJoe/AHK-Scripts", "About", "Iconi")
     }
 
+    ;@region System Tray
     ; ---------------------------- SYSTEM TRAY MENU CUSTOMIZATION ----------------------------
     SetupSystemTray(traySettings, hideTrayIconOption) {
         ; Ensure the parameter type is correct, otherwise use a new instance of the class to use defaults
@@ -2776,3 +2882,5 @@ class ExplorerDialogPathSelector {
     }
 
 } ; ----------------------- END OF ExplorerDialogPathSelector -----------------------
+
+#HotIf  ; End of HotIf block started at top of file
