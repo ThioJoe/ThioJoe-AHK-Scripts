@@ -36,10 +36,85 @@ class ControlInfo {
  * @param Haystack 
  * @param Needle 
  * @param {String|1|0} CaseSense 
- * @returns {Number} 
+ * @returns {Boolean} 
  */
 static StartsWith(Haystack, Needle, CaseSense := "Off") {
-    return InStr(Haystack, Needle, CaseSense) == 1
+    return (InStr(Haystack, Needle, CaseSense) = 1)
+}
+
+/**
+ * 
+ * @param {string} prompt 
+ * @param {string} title 
+ * @param {Number} width 
+ * @param {Number} height 
+ */
+static GetUserInput(prompt, title, width := 300, height := 200) {
+    ; Pop up a message box with input
+    inputObj := InputBox(prompt, title, "w" . width . " h" . height)
+    if (inputObj.Result == "Cancel")
+        return ""
+
+    input := inputObj.Value
+
+    return input
+}
+
+
+static JoinSelectedLines(addSpace := true) {
+    ; Store the original clipboard contents in a variable.
+    ;    We save both ClipboardAll (for all data types) and the plain text version.
+    local OriginalFullClipboard := ClipboardAll()
+    local originalClipboardText := A_Clipboard
+
+    Send("{Blind}{Ctrl Up}{Shift Up}") ; Ensure Ctrl and Shift are released
+
+    try {
+        ; Clear the clipboard and copy the currently selected text.
+        A_Clipboard := ""
+        Send("^x")
+        ClipWait(1) ; Wait a maximum of 0.5 seconds for the copy to complete.
+        ; Now the clipboard contains the copied text.
+    } catch {
+        A_Clipboard := OriginalFullClipboard
+        return
+    }
+
+    ; Get the copied text and replace all newline characters with a space.
+    local clipboardText := A_Clipboard
+
+    ; Split the newlines and trim each line
+    local prepText := StrReplace(clipboardText, "`r`n", "`n") ; Normalize newlines to `n
+    prepText := StrReplace(prepText, "`r", "`n") ; Normalize any remaining `r to `n
+    local clipLinesArray := StrSplit(prepText, "`n")
+    for index, line in clipLinesArray {
+        clipLinesArray[index] := Trim(line)
+    }
+
+    ; Join the lines with space or nothing based on parameter
+    local joiner := ""
+    if (addSpace = true) {
+        joiner := " "
+    }
+
+    local joinedText := ""
+    loop clipLinesArray.Length {
+        if (A_Index = 1) { ; Special case for first line to avoid leading joiner
+            joinedText := clipLinesArray[A_Index]
+        } else {
+            joinedText := joinedText . joiner . clipLinesArray[A_Index]
+        }
+    }
+
+    ; Type the modified text, replacing the original selection.
+    ; SendInput(joinedText)
+    A_Clipboard := "" ; Clea so we can use Clipwait again
+    A_Clipboard := joinedText
+    ClipWait(1)
+    Send("^v")
+
+    ; Restore the original clipboard. We don't need it anymore.
+    A_Clipboard := OriginalFullClipboard
 }
 
 ;; ------------------- Mouse and Cursor Related --------------------
@@ -174,10 +249,10 @@ static CheckMouseOverControlAdvanced(winTitle, ctl := '', ctlMinWidth := 0) {
  * Check if mouse is over a specific window by program name (even if not focused).
  * @param {String} programTitle The program identifier (e.g., "ahk_exe notepad.exe")
  * @returns {Bool} True if mouse is over the specified program window, false otherwise
- * @example #HotIf CheckMouseOverProgram("ahk_exe notepad.exe")
+ * @example ' #HotIf CheckMouseOverProgram("ahk_exe notepad.exe") '
  */
 static CheckMouseOverProgram(programTitle) {
-    MouseGetPos(unset, unset, &hWnd)
+    MouseGetPos(unset, unset, &hWnd, unset, unset)
     return WinExist(programTitle " ahk_id" hWnd)
 }
 
@@ -188,7 +263,7 @@ static CheckMouseOverProgram(programTitle) {
  * @example CheckMouseOverSpecificWindowClass("#32770")
  */
 static CheckMouseOverSpecificWindowClass(classNNCheck) {
-    MouseGetPos(unset, unset, &hWnd)
+    MouseGetPos(unset, unset, &hWnd, unset, unset)
     ; Get the classNN of the window
     windowClass := WinGetClass("ahk_id " hWnd)
     ; Check if the classNN matches the one provided
@@ -200,7 +275,7 @@ static CheckMouseOverSpecificWindowClass(classNNCheck) {
  * @returns {Int} The window handle under the mouse cursor
  */
 static GetWindowHwndUnderMouse() {
-    MouseGetPos(unset, unset, &WindowhwndOut)
+    MouseGetPos(unset, unset, &WindowhwndOut, unset, unset)
     ;MsgBox("Window Hwnd: " Windowhwnd)
     return WindowhwndOut
 }
@@ -210,7 +285,7 @@ static GetWindowHwndUnderMouse() {
  * @returns {String} The control class name under the mouse cursor
  */
 static GetControlClassUnderMouse() {
-    MouseGetPos(unset, unset, unset, &classNN)
+    MouseGetPos(unset, unset, unset, &classNN, unset)
     return classNN
 }
 
@@ -806,18 +881,10 @@ static GetClipboardFormatRawData(formatName := "", formatIDInput := unset) {
  * @returns {void}
  */
 static TypeString(text, delayMs) {
-    originalInputDelay := A_KeyDelay
-    SetKeyDelay(delayMs)
-
-    try {
-        ; Loop through each character in the string and send it with a delay
-        loop StrLen(text) {
-            SendText(SubStr(text, A_Index, 1))
-        }
-    } finally {
-        SetKeyDelay(originalInputDelay)
+    loop StrLen(text) {
+        SendText(SubStr(text, A_Index, 1))
+        Sleep(delayMs)
     }
-    
 }
 
 ;; ------------------------- Tooltip ------------------------------

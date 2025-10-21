@@ -35,8 +35,6 @@ class SnippingToolActions {
     static Close := 7
 }
 
-DebugMode := false ; Set to true to enable debug messages. Set to false to disable them.
-
 ; ====================================================================================================
 ; ====================================================================================================
 ; ====================================================================================================
@@ -64,6 +62,8 @@ ActivateSnippingToolAction(elementEnum, autoClickToast := false) {
 
 ; ----------------------------------- Main Class ---------------------------------
 class SnippingToolController {
+
+    static DebugMode := false ; Set to true to enable debug messages. Set to false to disable them.
 
     ; Class level variables
     static toastString := "New notification ahk_exe ShellExperienceHost.exe"
@@ -121,7 +121,7 @@ class SnippingToolController {
         }
 
         ; If using debug mode, output the resolved strings
-        if (DebugMode) {
+        if (this.DebugMode) {
             MsgBox("`nSnippingToolController initialized with the following values:`n"
                 . "SnipOverlayWindowName: " this.SnipOverlayWindowName "`n"
                 . "AppDescription: " this.AppDescription "`n"
@@ -561,7 +561,7 @@ class SnippingToolController {
 
     static OutErrorDebug(msg) {
         OutputDebug("`n" msg)
-        if (DebugMode) {
+        if (this.DebugMode) {
             MsgBox("`n" msg)
         }
     }
