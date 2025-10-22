@@ -45,7 +45,7 @@ global g_pathSelector_programName := "Explorer Dialog Path Selector"
 
 ; This line shouldn't have an actual effect (Only applies to hotkeys defined with double colon), we only need it because if using the HotIf function inside, it needs to match a HotIf string
 ; HotIf block is also ended at the end of this script file to be sure it doesn't affect other hotkeys outside this script
-#HotIf ExplorerDialogPathSelector.MouseIsOverDialogWindow() ; Makes hotkeys only active when the mouse is over a dialog window
+#HotIf ExplorerDialogPathSelector.MouseIsOverDialogWindow ; Makes hotkeys only active when the mouse is over a dialog window
 
 global EDPS := unset
 ; Create an instance of the class and set it as the main instance
@@ -148,6 +148,10 @@ class ExplorerDialogPathSelector {
             ExitApp()
         }
         ; --------------------------------------------------------
+
+        
+        ; Set instance for whether last hotkey was set with HotIf context
+        this.previousHotkeySetWithHotIf := this.g_pth_Settings.useHotIfPreDetection
 
         this.SetMenuTheme("AllowDark") ; Set the menu theme to follow system theme
         this.SetupSystemTray(systemTraySettingsObject, this.g_pth_Settings.hideTrayIcon)
@@ -257,39 +261,43 @@ class ExplorerDialogPathSelector {
         if (previousHotkeyString != "") {
             local inContextError := ""
             local noContextError := ""
-
-            ; First disable with no HotIf context
-            try {
-                HotIf()
-                HotKey(previousHotkeyString, "Off")
-            } catch Error as hotkeyUnsetErr {
-                ;MsgBox("Error disabling previous hotkey: " hotkeyUnsetErr.Message "`n`nHotkey Attempted to Disable:`n" previousHotkeyString "`n`nWill still try to set new hotkey (" newHotkey ").")
-                inContextError := hotkeyUnsetErr.Message
-            }
-
-            ; Then disable with HotIf context
-            try {
-                HotIf('ExplorerDialogPathSelector.MouseIsOverDialogWindow()')
-                HotKey(previousHotkeyString, "Off")
-            } catch Error as hotkeyUnsetErr {
-                ;MsgBox("Error disabling previous hotkey in HotIf context: " hotkeyUnsetErr.Message "`n`nHotkey Attempted to Disable:`n" previousHotkeyString "`n`nWill still try to set new hotkey (" newHotkey ").")
-                noContextError := hotkeyUnsetErr.Message
-            }
-
-            ; We'll usually expect one of them to error, but if both attempts errored out, show a message
-            if (inContextError and noContextError) {
-                MsgBox("Error disabling previous hotkey in HotIf context. `n`nHotkey Attempted to Disable:`n" previousHotkeyString "`n`nWill still try to set new hotkey (" newHotkey "). `n`nErrors:`nWith HotIf Context: " inContextError "`nWithout HotIf Context: " noContextError)
+           
+            if (this.previousHotkeySetWithHotIf) {
+                ; Disable if was in HotIf context
+                try {
+                    HotIf(ExplorerDialogPathSelector.MouseIsOverDialogWindow)
+                    HotKey(previousHotkeyString, unset, "Off")
+                } catch Error as hotkeyUnsetErr {
+                    OutputDebug("Error disabling previous hotkey in HotIf context: " hotkeyUnsetErr.Message "`n`nHotkey Attempted to Disable:`n" previousHotkeyString "`n`nWill still try to set new hotkey (" newHotkey ").")
+                    noContextError := hotkeyUnsetErr.Message
+                }
+            } else {
+                ; Disable if no HotIf context
+                try {
+                    HotIf()
+                    HotKey(previousHotkeyString, unset, "Off")
+                } catch Error as hotkeyUnsetErr {
+                    OutputDebug("Error disabling previous hotkey: " hotkeyUnsetErr.Message "`n`nHotkey Attempted to Disable:`n" previousHotkeyString "`n`nWill still try to set new hotkey (" newHotkey ").")
+                    inContextError := hotkeyUnsetErr.Message
+                }
             }
         }
 
+        local inSpecialContext := false ; Keep track just until the end of the function
+
         ; Set the proper HotIf context based on settings and new hotkey, and set the new hotkey
         ;    But if the hotkey starts with a '~', don't bother using HotIf because the '~' makes it not block the key anyway
-        if (this.g_pth_settings.useHotIfPreDetection = true && !(InStr(newHotkey, "~", "Off") = true))
-            HotIf('ExplorerDialogPathSelector.MouseIsOverDialogWindow()')
+        if (this.g_pth_settings.useHotIfPreDetection = true && !(InStr(newHotkey, "~", "Off") = true)) {
+            HotIf(ExplorerDialogPathSelector.MouseIsOverDialogWindow)
+            inSpecialContext := true
+            this.previousHotkeySetWithHotIf := true
         ; End any previous HotIf block if not using HotIf. This makes the hotkey always active
-        else
+        } else {
+            this.previousHotkeySetWithHotIf := false
             HotIf()
+        }
 
+        ; Set the new hotkey
         try {
             HotKey(newHotkey, this.boundDisplayFunc, "On") ; Include 'On' option to ensure it's enabled if it had been disabled before, like changing the hotkey back again
         } catch Error as hotkeySetErr {
@@ -297,8 +305,9 @@ class ExplorerDialogPathSelector {
         }
 
         ; End any HotIf block regardless of whether we used it or not to keep it simple. This avoids affecting other hotkeys outside this class. But the HotIf condition was still applied to the hotkey above (if set to do so)
-        HotIf()
-
+        if (inSpecialContext = true) {
+            HotIf()
+        }
     }
 
     ; Loads Windows resources to get localized versions of strings that are used to locate dialogs and their controls
@@ -431,13 +440,13 @@ class ExplorerDialogPathSelector {
         return windowClassNN
     }
 
-    ; static MouseIsOverDialogWindow(*) => this.GetMouseOverClassNN() ~= this.windowClassesPattern
-    static MouseIsOverDialogWindow(*) { ; More expanded version for debugging
-        local classNN := this.GetMouseOverClassNN()
-        local result := classNN ~= this.windowClassesPattern
-        OutputDebug(result . " | " . classNN . "`n")
-        return result
-    }
+    static MouseIsOverDialogWindow(*) => ExplorerDialogPathSelector.GetMouseOverClassNN() ~= ExplorerDialogPathSelector.windowClassesPattern
+    ; static MouseIsOverDialogWindow(*) { ; More expanded version for debugging
+    ;     local classNN := this.GetMouseOverClassNN()
+    ;     local result := classNN ~= this.windowClassesPattern
+    ;     OutputDebug(result . " | " . classNN . "`n")
+    ;     return result
+    ; }
 
     /**
      * Resolves a windows localized (multilanguage) resource string using SHLoadIndirectString API.
