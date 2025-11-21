@@ -2714,22 +2714,34 @@ class ExplorerDialogPathSelector {
             DirCreate(settingsFileDir)
 
             ; Save all settings to INI file
-            IniWrite(this.g_pth_Settings.dialogMenuHotkey, settingsFilePath, "Settings", "dialogMenuHotkey")
-            IniWrite(this.g_pth_Settings.useHotIfPreDetection ? "1" : "0", settingsFilePath, "Settings", "useHotIfPreDetection")
-            IniWrite(this.g_pth_Settings.dopusRTPath, settingsFilePath, "Settings", "dopusRTPath")
-            ; Put quotes around the prefix and suffix values, otherwise spaces will be trimmed by the OS. The quotes will be removed when the values are read back in.
-            IniWrite('"' this.g_pth_Settings.activeTabPrefix '"', settingsFilePath, "Settings", "activeTabPrefix")
-            IniWrite('"' this.g_pth_Settings.activeTabSuffix '"', settingsFilePath, "Settings", "activeTabSuffix")
-            IniWrite('"' this.g_pth_Settings.standardEntryPrefix '"', settingsFilePath, "Settings", "standardEntryPrefix")
-            IniWrite(this.g_pth_Settings.enableExplorerDialogMenuDebug ? "1" : "0", settingsFilePath, "Settings", "enableExplorerDialogMenuDebug")
-            IniWrite(this.g_pth_Settings.alwaysShowClipboardmenuItem ? "1" : "0", settingsFilePath, "Settings", "alwaysShowClipboardmenuItem")
-            IniWrite(this.g_pth_Settings.groupPathsByWindow ? "1" : "0", settingsFilePath, "Settings", "groupPathsByWindow")
-            IniWrite(this.g_pth_Settings.enableUIAccess ? "1" : "0", settingsFilePath, "Settings", "enableUIAccess")
-            IniWrite(this.g_pth_Settings.maxMenuLength, settingsFilePath, "Settings", "maxMenuLength")
-            IniWrite(this.g_pth_Settings.hideTrayIcon ? "1" : "0", settingsFilePath, "Settings", "hideTrayIcon")
-            IniWrite(this.g_pth_Settings.useBoldTextActive ? "1" : "0", settingsFilePath, "Settings", "useBoldTextActive")
-            IniWrite(GetFavoritesDelimitedString(), settingsFilePath, "Settings", "favoritePaths")
-            IniWrite(GetConditionalFavoritesDelimitedString(), settingsFilePath, "Settings", "conditionalFavorites")
+            for settingName, settingDefault in this.DefaultSettings.OwnProps() {
+                if (settingName = "__Init" || settingName = "Prototype")
+                    continue
+
+                ; Get userValue from g_pth_settings using the setting.name property name
+                if (this.g_pth_settings.HasOwnProp(settingName)) {
+                    userValue := this.g_pth_settings.%settingName%
+                }
+
+                if (userValue != "") {
+                    if (Type(settingDefault) = "String") {
+                        IniWrite('"' userValue '"', settingsFilePath, "Settings", settingName)
+                    } else if (Type(settingDefault) = "Integer") {
+                        IniWrite(userValue, settingsFilePath, "Settings", settingName)
+                    } else if (Type(settingDefault) = "Boolean") {
+                        IniWrite(userValue ? "1" : "0", settingsFilePath, "Settings", settingName)
+                    } else if (Type(settingDefault) = "Array") {
+
+                        if (settingName = "favoritePaths")
+                            IniWrite(GetFavoritesDelimitedString(), settingsFilePath, "Settings", settingName)
+                        else if (settingName = "conditionalFavorites")
+                            IniWrite(GetConditionalFavoritesDelimitedString(), settingsFilePath, "Settings", settingName)
+
+                    }
+                } else {
+                    IniWrite(settingDefault, settingsFilePath, "Settings", settingName)
+                }
+            }
 
             this.g_pth_SettingsFile.usingSettingsFile := true
 
@@ -2810,36 +2822,25 @@ class ExplorerDialogPathSelector {
         
         if FileExist(settingsFilePath) {
             ; Load each setting from the INI file
-            this.g_pth_Settings.dialogMenuHotkey := IniRead(settingsFilePath, "Settings", "dialogMenuHotkey", this.DefaultSettings.dialogMenuHotkey)
-            this.g_pth_Settings.useHotIfPreDetection := IniRead(settingsFilePath, "Settings", "useHotIfPreDetection", this.DefaultSettings.useHotIfPreDetection)
-            this.g_pth_Settings.dopusRTPath := IniRead(settingsFilePath, "Settings", "dopusRTPath", this.DefaultSettings.dopusRTPath)
-            this.g_pth_Settings.activeTabPrefix := IniRead(settingsFilePath, "Settings", "activeTabPrefix", this.DefaultSettings.activeTabPrefix)
-            this.g_pth_Settings.activeTabSuffix := IniRead(settingsFilePath, "Settings", "activeTabSuffix", this.DefaultSettings.activeTabSuffix)
-            this.g_pth_Settings.standardEntryPrefix := IniRead(settingsFilePath, "Settings", "standardEntryPrefix", this.DefaultSettings.standardEntryPrefix)
-            this.g_pth_Settings.enableExplorerDialogMenuDebug := IniRead(settingsFilePath, "Settings", "enableExplorerDialogMenuDebug", this.DefaultSettings.enableExplorerDialogMenuDebug)
-            this.g_pth_Settings.alwaysShowClipboardmenuItem := IniRead(settingsFilePath, "Settings", "alwaysShowClipboardmenuItem", this.DefaultSettings.alwaysShowClipboardmenuItem)
-            this.g_pth_Settings.groupPathsByWindow := IniRead(settingsFilePath, "Settings", "groupPathsByWindow", this.DefaultSettings.groupPathsByWindow)
-            this.g_pth_Settings.enableUIAccess := IniRead(settingsFilePath, "Settings", "enableUIAccess", this.DefaultSettings.enableUIAccess)
-            this.g_pth_settings.maxMenuLength := IniRead(settingsFilePath, "Settings", "maxMenuLength", this.DefaultSettings.maxMenuLength)
-            this.g_pth_Settings.hideTrayIcon := IniRead(settingsFilePath, "Settings", "hideTrayIcon", this.DefaultSettings.hideTrayIcon)
-            this.g_pth_Settings.useBoldTextActive := IniRead(settingsFilePath, "Settings", "useBoldTextActive", this.DefaultSettings.useBoldTextActive)
-            this.g_pth_settings.favoritePaths := StrSplit(IniRead(settingsFilePath, "Settings", "favoritePaths", ""), "|") ; Split the delimited string to an array
-            this.g_pth_settings.conditionalFavorites := ParseConditionalFavoritesString(IniRead(settingsFilePath, "Settings", "conditionalFavorites", ""))
+            for settingName, settingDefault in this.DefaultSettings.OwnProps() {
+                if (Type(settingDefault) = "Array") {
 
-            ; Convert string boolean values to actual booleans
-            this.g_pth_Settings.useHotIfPreDetection := this.g_pth_Settings.useHotIfPreDetection = "1"
-            this.g_pth_Settings.enableExplorerDialogMenuDebug := this.g_pth_Settings.enableExplorerDialogMenuDebug = "1"
-            this.g_pth_Settings.alwaysShowClipboardmenuItem := this.g_pth_Settings.alwaysShowClipboardmenuItem = "1"
-            this.g_pth_Settings.groupPathsByWindow := this.g_pth_Settings.groupPathsByWindow = "1"
-            this.g_pth_Settings.enableUIAccess := this.g_pth_Settings.enableUIAccess = "1"
-            this.g_pth_Settings.hideTrayIcon := this.g_pth_Settings.hideTrayIcon = "1"
-            this.g_pth_Settings.useBoldTextActive := this.g_pth_Settings.useBoldTextActive = "1"
-
-            ; Convert to int where necessary
-            this.g_pth_settings.maxMenuLength := this.g_pth_settings.maxMenuLength + 0
-
-            ; Remove empty entries from arrays
-            this.g_pth_settings.favoritePaths := this.RemoveEmptyArrayEntries(this.g_pth_settings.favoritePaths)
+                    if (settingName = "favoritePaths") {
+                        this.g_pth_settings.favoritePaths := StrSplit(IniRead(settingsFilePath, "Settings", "favoritePaths", ""), "|") ; Split the delimited string to an array
+                        this.g_pth_settings.favoritePaths := this.RemoveEmptyArrayEntries(this.g_pth_settings.favoritePaths)
+                    } else if (settingName = "conditionalFavorites") {
+                        this.g_pth_settings.conditionalFavorites := ParseConditionalFavoritesString(IniRead(settingsFilePath, "Settings", "conditionalFavorites", ""))
+                    }
+                    
+                } else {
+                    this.g_pth_settings.%settingName% := IniRead(settingsFilePath, "Settings", settingName, settingDefault)
+                    if (Type(settingDefault) = "Integer") {
+                        this.g_pth_settings.%settingName% := this.g_pth_settings.%settingName% + 0
+                    } else if (Type(settingDefault) = "Boolean") {
+                        this.g_pth_settings.%settingName% := this.g_pth_settings.%settingName% = "1"
+                    }
+                }
+            }
 
             this.g_pth_SettingsFile.usingSettingsFile := true
         } else {
