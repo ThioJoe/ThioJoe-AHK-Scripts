@@ -1,4 +1,4 @@
-#Requires AutoHotkey v2.0.19
+#Requires AutoHotkey >= v2.1-alpha.9
 
 ; Various utility functions. This script doesn't run anything by itself, but is meant to be included in other scripts
 
