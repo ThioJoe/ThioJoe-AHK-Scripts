@@ -396,6 +396,40 @@ class ExplorerDialogPathSelector {
         return RegExMatch(path, "^[^<>`"\/|?]+$")
     }
 
+    ValidateFavoritesPathLine(pathLine) {
+        ; If there's no :: delimiter for a custom display name, use standard character validation
+        if (!InStr(pathLine, "::")) {
+            if (!this.ValidatePathCharacters(pathLine)) {
+                MsgBox("Invalid characters found in path:`n" pathLine "`n`nCannot contain these characters:`n< > `" / | * ? `n`nPlease correct and try again.", "Error", "Icon!")
+                return false
+            } else {
+                return true
+            }
+        ; If there is a favorite display name set
+        } else {
+            parts := StrSplit(pathLine, "::")
+
+            ; ---- Error Conditions ----
+            ; If there are too many parts from using more than one delimiter
+            if (parts.Length != 2) {
+                MsgBox("Invalid favorite path line:`n" pathLine "`n`nMust contain only one '::' delimiter to separate the custom display name and the path.`n`nPlease correct and try again.", "Error", "Icon!")
+                return false
+            ; Either a display name or path is not included or empty
+            } else if (Trim(parts[1]) = "" or Trim(parts[2] = "")) {
+                MsgBox("Invalid favorite path line:`n" pathLine "`n`nNeither the favorite name and path cannot be empty.`n`nPlease correct and try again.", "Error", "Icon!")
+                return false
+            ; If the path contains invalid characters
+            } else if (!this.ValidatePathCharacters(parts[2])) {
+                MsgBox("Invalid characters found in path:`n" Trim(parts[2]) "`n`nCannot contain these characters:`n< > `" / | * ? `n`nPlease correct and try again.", "Error", "Icon!")
+                return false
+
+            ; ---- OK -----
+            } else {
+                return true
+            }
+        }
+    }
+
     ; Enum class for condition types
     class ConditionType {
         static DialogOwnerExe := {
@@ -1018,10 +1052,16 @@ class ExplorerDialogPathSelector {
             InsertMenuItem(CurrentLocations, "Favorites", unset, unset, unset, unset) ; Header
             for favoritePath in this.g_pth_Settings.favoritePaths {
 
-                ; Expand any environment variables if necessary for display
-                if (this.g_pth_settings.expandFaveEnvVariables and InStr(favoritePath, "%"))
+                ; Users can add double colons before a path to set a custom display name, by putting the name before the double colons, like  "Whatever Name::C:\Users\Blah"
+                if (InStr(favoritePath, "::")) {
+                    pathStrParts := StrSplit(favoritePath, "::")
+                    ; TODO - Make sure to add validation where the user initially sets the custom display name to ensure no more than one set of :: and that the string isn't empty
+                    favoritePathDisplay := pathStrParts[1]
+                    favoritePath := pathStrParts[2]
+                }
+                else if (this.g_pth_settings.expandFaveEnvVariables and InStr(favoritePath, "%")) ; Expand any environment variables if necessary for display
                     favoritePathDisplay := ExplorerDialogPathSelector.GetExpandedPath(favoritePath)
-                else
+                else ; Default to showing full path
                     favoritePathDisplay := favoritePath
 
                 InsertMenuItem(CurrentLocations, this.g_pth_settings.standardEntryPrefix favoritePathDisplay, favoritePath, A_WinDir . "\system32\imageres.dll", "-1024", false) ; Favorite Path
@@ -1066,13 +1106,18 @@ class ExplorerDialogPathSelector {
                     for conditionValue in favorite.ConditionValues {
                         if (this.StringMatchWithWildcards(itemToMatch, conditionValue)) {
                             InsertMenuItem(CurrentLocations, sectionHeader, unset, unset, unset, unset) ; Header
-                            ; Users can set multiple paths to show per conditional favorite entry upon a match
-                            for conditionPath in favorite.Paths {
 
-                                ; Expand any environment variables if necessary for display
-                                if (this.g_pth_settings.expandFaveEnvVariables and InStr(conditionPath, "%"))
+                            ; Users can set multiple paths to show per conditional favorite entry upon a match. So loop through to show them all
+                            for conditionPath in favorite.Paths {
+                                ; Users can add double colons before a path to set a custom display name, by putting the name before the double colons, like  "Whatever Name::C:\Users\Blah"
+                                if (InStr(conditionPath, "::")) {
+                                    pathStrParts := StrSplit(conditionPath, "::")
+                                    conditionDisplayPath := pathStrParts[1]
+                                    conditionPath := pathStrParts[2]
+                                }
+                                else if (this.g_pth_settings.expandFaveEnvVariables and InStr(conditionPath, "%")) ; Expand any environment variables if necessary for display
                                     conditionDisplayPath := ExplorerDialogPathSelector.GetExpandedPath(conditionPath)
-                                else
+                                else ; Default to just showing the full path
                                     conditionDisplayPath := conditionPath
 
                                 InsertMenuItem(CurrentLocations, this.g_pth_settings.standardEntryPrefix conditionDisplayPath, conditionPath, A_WinDir . "\system32\imageres.dll", "-81", false) ; Conditional Favorite Path
@@ -2196,15 +2241,14 @@ class ExplorerDialogPathSelector {
                 ; Validate values
                 for value in entry.ConditionValues {
                     if (!this.ValidatePathCharacters_AllowWildCards(value)) {
-                        MsgBox("Invalid characters found in value:`n" value "`n`nCannot contain these characters:`n< > : `" / | ? `n`nPlease correct and try again.", "Error", "Icon!")
+                        MsgBox("Invalid characters found in value:`n" value "`n`nCannot contain these characters:`n< > `" / | ? `n`nPlease correct and try again.", "Error", "Icon!")
                         return
                     }
                 }
                 
                 ; Validate paths
                 for path in entry.Paths {
-                    if (!this.ValidatePathCharacters(path)) {
-                        MsgBox("Invalid characters found in path:`n" path "`n`nCannot contain these characters:`n< > : `" / | * ? `n`nPlease correct and try again.", "Error", "Icon!")
+                    if (!this.ValidateFavoritesPathLine(path)) {
                         return
                     }
                 }
@@ -2410,38 +2454,19 @@ class ExplorerDialogPathSelector {
         helpGui.AddText("xm+15 y+2 " txtWStr, "• Multiple values can be set per rule (one per line)")
         helpGui.AddText("xm+15 y+2 " txtWStr, "• If any values match, all associated paths will be shown")
 
-        ; ---- Executable name match Examples
-        execExamplesText := helpGui.AddText("xm y+10 " txtWStr, "Executable Name Match Examples: ")
-        execExamplesText.SetFont("italic")
-        execExample1 := helpGui.AddText("xm+15 y+5 " txtWStr, "• A conditional value of 'Photoshop.exe' will cause the associated paths to show when the dialog window is opened by Photoshop (Photoshop.exe).")
-        execExample2 := helpGui.AddText("xm+15 y+5 " txtWStr, "• A conditional value 'Adobe*' will match when the window is opened by 'Adobe Reader.exe' or any other process that matches the wildcard pattern.")
-        execExample1.Move(unset, unset, WidthForMargin(winWidth, execExample1, 20))
-        execExample2.Move(unset, unset, WidthForMargin(winWidth, execExample2, 20))
-
-        ; ---- Path match Examples
-        pathExamplesText := helpGui.AddText("xm y+10 " txtWStr, "Path Match Examples: ")
-        pathExamplesText.SetFont("italic")
-        pathExample1 := helpGui.AddText("xm+15 y+5 " txtWStr, "• A conditional value of 'C:\Program Files\Adobe' will cause the associated paths to show when the dialog window's path is exactly`n'C:\Program Files\Adobe'")
-        pathExample2 := helpGui.AddText("xm+15 y+5 " txtWStr, "• A conditional value of 'C:\Program Files\*' will match when the dialog window's path starts with 'C:\Program Files\'")
-        pathExample1.Move(unset, unset, WidthForMargin(winWidth, pathExample1, 20))
-        pathExample2.Move(unset, unset, WidthForMargin(winWidth, pathExample2, 20))
-
-        ; ---- Parent Window Title match Examples
-        parentExamplesText := helpGui.AddText("xm y+10 " txtWStr, "Parent Title Match Examples: ")
-        parentExamplesText.SetFont("italic")
-        parentExample1 := helpGui.AddText("xm+15 y+5 " txtWStr, "• A conditional value of '*YouTube*' would match if the dialog was opened by a browser tab titled `"Channel Dashboard - YouTube Studio`", for example. ")
-        parentExample1.Move(unset, unset, WidthForMargin(winWidth, parentExample1, 20))
-
-        ; ---- Filetype filter Example
-        filterExampleText := helpGui.AddText("xm y+10 " txtWStr, "File Type Filter Match Examples: ")
-        filterExampleText.SetFont("italic")
-        filterExample1 := helpGui.AddText("xm+15 y+5 " txtWStr, "• If a Open/Save dialog's file type filter is `"Text Documents (*.txt)`", you could match with *.txt* or *Text* or even *Document* for example")
-        filterExample1.Move(unset, unset, WidthForMargin(winWidth, filterExample1, 20))
+        examplesBtn := helpGui.AddButton("xm y+10 w120", "Show Examples")
+        ; examplesBtn.OnEvent("Click", this.ShowConditionalFavoriteExamplesGui)
+        examplesBtn.OnEvent("Click", (*) => ExplorerDialogPathSelector.ShowConditionalFavoriteExamplesGui())
 
         ; Paths Section
-        pathsHeader := helpGui.AddText("xm y+20 " txtWStr " h20", "Paths:")
+        pathsHeader := helpGui.AddText("xm y+10 " txtWStr " h20", "Paths:")
         pathsHeader.SetFont("s10 bold underline")
-        helpGui.AddText("xm y+5 " txtWStr, "These are the paths that will be shown when the condition values match.")
+        ; helpGui.AddText("xm y+5 " txtWStr, "• These are the paths that will be shown when the condition values match.")
+        pathsText := "• These are the paths that will be shown when the condition values match.`n"
+                . "• You can set a custom display name for any path by preceding the path with some name followed by two colons ( :: )"
+                . "`n     For example:`n"
+                . "           My Favorite Path::C:\Whatever\Path"
+        helpGui.AddText("xm y+5 " txtWStr, pathsText)
 
         ; Close button
         closeButton := helpGui.AddButton("xm y+20 w80 Default", "Close")
@@ -2458,13 +2483,74 @@ class ExplorerDialogPathSelector {
         closeButton.Focus()
     }
 
+    ;@region Examples GUI
+    static ShowConditionalFavoriteExamplesGui(*) {
+        ; Create main window
+        examplesGui := Gui("+Resize +MinSize400x500", "Conditional Favorites - Examples")
+
+        examplesGui.SetFont("s10", "Segoe UI")
+        winWidth := 500
+        textWidth := winWidth - 20  ; Subtract some margin from the right
+
+        WidthForMargin(winWidth, textControl, margin) {
+            textControl.GetPos(&ctrl_X, &ctrl_Y, &ctrlWidth, &ctrlHeight)
+            remainingWidth := winWidth - ctrl_X
+            return remainingWidth - margin
+        }
+
+        winWidthString := "w" winWidth
+        txtWStr := "w" textWidth
+
+        ; ---- Executable name match Examples
+        execExamplesText := examplesGui.AddText("xm y+10 " txtWStr, "Executable Name Match Examples: ")
+        execExamplesText.SetFont("bold italic")
+        execExample1 := examplesGui.AddText("xm+15 y+5 " txtWStr, "• A conditional value of 'Photoshop.exe' will cause the associated paths to show when the dialog window is opened by Photoshop (Photoshop.exe).")
+        execExample2 := examplesGui.AddText("xm+15 y+5 " txtWStr, "• A conditional value 'Adobe*' will match when the window is opened by 'Adobe Reader.exe' or any other process that matches the wildcard pattern.")
+        execExample1.Move(unset, unset, WidthForMargin(winWidth, execExample1, 20))
+        execExample2.Move(unset, unset, WidthForMargin(winWidth, execExample2, 20))
+
+        ; ---- Path match Examples
+        pathExamplesText := examplesGui.AddText("xm y+10 " txtWStr, "Path Match Examples: ")
+        pathExamplesText.SetFont("bold italic")
+        pathExample1 := examplesGui.AddText("xm+15 y+5 " txtWStr, "• A conditional value of 'C:\Program Files\Adobe' will cause the associated paths to show when the dialog window's path is exactly`n'C:\Program Files\Adobe'")
+        pathExample2 := examplesGui.AddText("xm+15 y+5 " txtWStr, "• A conditional value of 'C:\Program Files\*' will match when the dialog window's path starts with 'C:\Program Files\'")
+        pathExample1.Move(unset, unset, WidthForMargin(winWidth, pathExample1, 20))
+        pathExample2.Move(unset, unset, WidthForMargin(winWidth, pathExample2, 20))
+
+        ; ---- Parent Window Title match Examples
+        parentExamplesText := examplesGui.AddText("xm y+10 " txtWStr, "Parent Title Match Examples: ")
+        parentExamplesText.SetFont("bold italic")
+        parentExample1 := examplesGui.AddText("xm+15 y+5 " txtWStr, "• A conditional value of '*YouTube*' would match if the dialog was opened by a browser tab titled `"Channel Dashboard - YouTube Studio`", for example. ")
+        parentExample1.Move(unset, unset, WidthForMargin(winWidth, parentExample1, 20))
+
+        ; ---- Filetype filter Example
+        filterExampleText := examplesGui.AddText("xm y+10 " txtWStr, "File Type Filter Match Examples: ")
+        filterExampleText.SetFont("bold italic")
+        filterExample1 := examplesGui.AddText("xm+15 y+5 " txtWStr, "• If a Open/Save dialog's file type filter is `"Text Documents (*.txt)`", you could match with *.txt* or *Text* or even *Document* for example")
+        filterExample1.Move(unset, unset, WidthForMargin(winWidth, filterExample1, 20))
+
+        ; Close button
+        closeButton := examplesGui.AddButton("xm y+20 w80 Default", "Close")
+        closeButton.OnEvent("Click", (*) => examplesGui.Destroy())
+
+        ; Get bottom position of close button to set the height of the window
+        closeButton.GetPos(&ctrl_X, &ctrl_Y, &ctrlWidth, &ctrlHeight)
+        windowHeight := ctrl_Y + ctrlHeight + 20
+
+        ; Show with specific initial size
+        examplesGui.Show(winWidthString " h" windowHeight)
+
+        ; Default to focus on the close button
+        closeButton.Focus()
+    }
+
     ;@region Favorites GUI
     ShowFavoritePathsGui(*) {
         ; Create the main window
         pathGui := Gui("+Resize +MinSize400x300", "Favorite Paths Manager")
         
         ; Add instructions text
-        pathGui.AddText(, "Enter folder paths to always show (one per line):")
+        pathGui.AddText(, "Enter folder paths to always show (one per line).`nSee Help button for how to set custom path display names.")
         
         ; Add multi-line edit control with scrollbars
         editPaths := pathGui.AddEdit("vPaths r15 w400 Multi VScroll", "")
@@ -2503,8 +2589,7 @@ class ExplorerDialogPathSelector {
 
             ; Ensure none have invalid characters
             for path in pathArray {
-                if (!this.ValidatePathCharacters(path)) {
-                    MsgBox("Invalid characters found in path:`n" path "`n`nCannot contain these characters:`n< > : `" / | ? * `n`nPlease correct and try again.", "Error", "Icon!")
+                if (!this.ValidateFavoritesPathLine(path)) {
                     return
                 }
             }
@@ -2520,7 +2605,7 @@ class ExplorerDialogPathSelector {
     ;@region Help Main
     ShowPathSelectorHelpWindow(*) {
         ; Added MinSize to prevent window from becoming too small
-        helpGui := Gui("+Resize +MinSize400x300", g_pathSelector_programName " - Help & Tips")
+        helpGui := Gui("+Resize +MinSize400x400", g_pathSelector_programName " - Help & Tips")
         helpGui.SetFont("s10", "Segoe UI")
         helpGui.OnEvent("Size", GuiResize)
 
@@ -2550,7 +2635,6 @@ class ExplorerDialogPathSelector {
         tipsHeader.SetFont("s10 bold")
 
         ; Display info about UI Access depending on the mode the script is running in
-        elevatedTipText := ""
         if A_IsCompiled {
             elevatedTipText := "• To make this program work with dialogs launched by elevated processes without having to run it as admin, place the executable in a trusted location such as `"C:\Program Files\...`""
             elevatedTipText .= "  (You do NOT need to run this exe itself as Admin for this to work.)"
@@ -2561,6 +2645,14 @@ class ExplorerDialogPathSelector {
             elevatedTipText := "• Enable `"UI Access`" setting to allow the script to work in dialogs from elevated windows without running this script itself as admin."
         }
         labelElevatedTip := helpGui.AddLink("xm y+5 w300", elevatedTipText)
+
+        ; It defaults to adding a whole line space between apparently. So we subtract 10 from y. Note we don't use "y-5" because the - is for absolute positioning. +- is for relative but negative
+        labelfavoriteDisplayTip := helpGui.AddText("xm y+-10 w300",
+            "• For favorites and conditional favorites, you can set a custom display name for any path by "
+            . "preceding the path with some name followed by two colons (::), "
+            . "for example:`n"
+            . "      My Favorite Path::C:\Whatever\Path"
+            )
 
         ; Display clickable link to source repo
         projectPageText := 'Check for updates on the project page: `n <a href="https://github.com/ThioJoe/ThioJoe-AHK-Scripts">https://github.com/ThioJoe/ThioJoe-AHK-Scripts</a>'
