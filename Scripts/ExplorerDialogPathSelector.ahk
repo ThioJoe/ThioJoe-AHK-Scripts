@@ -24,7 +24,7 @@ SetWorkingDir(A_ScriptDir)
 
 ; Set global variables about the program and compiler directives. These use regex to extract data from the lines above them (A_PriorLine)
 ; Keep the line pairs together!
-global g_pathSelector_version := "1.6.1.0"
+global g_pathSelector_version := "1.7.0.0"
 ;@Ahk2Exe-Let ProgramVersion=%A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 global g_pathSelector_programName := "Explorer Dialog Path Selector"
@@ -211,6 +211,7 @@ class ExplorerDialogPathSelector {
         ; Settings appearing in the settings file only, not in the GUI
         maxMenuLength := 120             ; Maximum length of menu items. The true max is MAX_PATH, but thats really long so this is a reasonable limit
         hideTrayIcon := false            ; Whether to hide the tray icon or not
+        expandFaveEnvVariables := true   ; Wether to expand environment variables (such as %USERPROFILE%) from favorites when displaying them in the menu 
     }
 
     class SystemTraySettings {
@@ -561,6 +562,15 @@ class ExplorerDialogPathSelector {
             OutputDebug("`nError: " err.Message "`n`nFailed to get display name for path: " path)
             return false
         }
+    }
+
+    static GetExpandedPath(path) {
+        size := DllCall('ExpandEnvironmentStrings', 'Str', path, 'Ptr', 0, 'UInt', 0)
+        if (!size)
+            return ""
+
+        DllCall('ExpandEnvironmentStrings', 'Str', path, 'Ptr', buf := Buffer(size * 2), 'UInt', size)
+        return StrGet(buf)
     }
 
     ; Sets the theme of menus by the process - Adapted from https://www.autohotkey.com/boards/viewtopic.php?style=19&f=82&t=133886#p588184
@@ -1007,7 +1017,14 @@ class ExplorerDialogPathSelector {
         if (this.g_pth_Settings.favoritePaths.Length > 0) {
             InsertMenuItem(CurrentLocations, "Favorites", unset, unset, unset, unset) ; Header
             for favoritePath in this.g_pth_Settings.favoritePaths {
-                InsertMenuItem(CurrentLocations, this.g_pth_settings.standardEntryPrefix favoritePath, favoritePath, A_WinDir . "\system32\imageres.dll", "-1024", false) ; Favorite Path
+
+                ; Expand any environment variables if necessary for display
+                if (this.g_pth_settings.expandFaveEnvVariables and InStr(favoritePath, "%"))
+                    favoritePathDisplay := ExplorerDialogPathSelector.GetExpandedPath(favoritePath)
+                else
+                    favoritePathDisplay := favoritePath
+
+                InsertMenuItem(CurrentLocations, this.g_pth_settings.standardEntryPrefix favoritePathDisplay, favoritePath, A_WinDir . "\system32\imageres.dll", "-1024", false) ; Favorite Path
                 hasItems := true
             }
         }
@@ -1051,7 +1068,14 @@ class ExplorerDialogPathSelector {
                             InsertMenuItem(CurrentLocations, sectionHeader, unset, unset, unset, unset) ; Header
                             ; Users can set multiple paths to show per conditional favorite entry upon a match
                             for conditionPath in favorite.Paths {
-                                InsertMenuItem(CurrentLocations, this.g_pth_settings.standardEntryPrefix conditionPath, conditionPath, A_WinDir . "\system32\imageres.dll", "-81", false) ; Conditional Favorite Path
+
+                                ; Expand any environment variables if necessary for display
+                                if (this.g_pth_settings.expandFaveEnvVariables and InStr(conditionPath, "%"))
+                                    conditionDisplayPath := ExplorerDialogPathSelector.GetExpandedPath(conditionPath)
+                                else
+                                    conditionDisplayPath := conditionPath
+
+                                InsertMenuItem(CurrentLocations, this.g_pth_settings.standardEntryPrefix conditionDisplayPath, conditionPath, A_WinDir . "\system32\imageres.dll", "-81", false) ; Conditional Favorite Path
                                 hasItems := true
                             }
                             break ; No need to keep going if we found a match
