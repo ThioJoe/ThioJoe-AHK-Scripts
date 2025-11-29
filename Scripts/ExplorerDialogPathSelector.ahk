@@ -196,6 +196,8 @@ class ExplorerDialogPathSelector {
         enableUIAccess := true
         ; Group paths by Window or not
         groupPathsByWindow := true
+        ; Whether to show option to open current dialog path in an explorer Window
+        openCurrentPath := true
         ; Use simulated bold text for active paths in the menu
         useBoldTextActive := true
         activeTabSuffix := ""            ;  Appears to the right of the active path for each window group
@@ -1180,6 +1182,22 @@ class ExplorerDialogPathSelector {
             hasItems := true ; Still show the menu item even if clipboard is empty, if the user has set it to always show clipboard item
         }
 
+        ; If option is enabled to send current dialog path to explorer, show it
+        if (this.g_pth_Settings.openCurrentPath and windowPath != "") {
+            if (hasItems)
+                InsertMenuItem(CurrentLocations, "", unset, unset, unset, unset) ; Separator
+
+            menuText := this.g_pth_Settings.standardEntryPrefix "Open Path in Explorer"
+
+            ; Set menu item and callback to expression that runs 'start' with the path
+            CurrentLocations.Insert(unset, menuText, (iName, iPos, mObj) => Run('"' windowPath '"'), unset)
+            currentMenuNum++ ; We aren't using our InsertMenuItem function because we need a custom callback, so we need to manually increment the number
+            ; Set the icon
+            CurrentLocations.SetIcon(currentMenuNum "&", A_WinDir . "\system32\shell32.dll", "-16769")
+
+            hasItems := true
+        }
+
         RemoveToolTip() {
             SetTimer(RemoveToolTip, 0)
             ToolTip()
@@ -1654,6 +1672,12 @@ class ExplorerDialogPathSelector {
         useBoldTextActiveCheckTooltipText := "Use a bold font for the active tab in the menu.`nNote: It uses a simulated bold effect using unicode, `n      so it may not look perfect for all characters."
         ExplorerDialogPathSelector.AddTooltipToControl(hTT, useBoldTextActiveCheck.Hwnd, useBoldTextActiveCheckTooltipText)
 
+        ; Option to open current dialog path in Explorer
+        openCurrentPathCheck := settingsGui.AddCheckbox("xm y+5", "Show `"Open Path in Explorer`" Option")
+        openCurrentPathCheck.Value := this.g_pth_Settings.openCurrentPath
+        openCurrentPathCheckTooltipText := "Adds a menu option to open the current dialog's path in a new Explorer window/tab. (Or the default file explorer)"
+        ExplorerDialogPathSelector.AddTooltipToControl(hTT, openCurrentPathCheck.Hwnd, openCurrentPathCheckTooltipText)
+
         ; Enable UI Access - Checkbox
         UIAccessCheck := settingsGui.AddCheckbox("xm y+5", "Enable UI Access")
         UIAccessCheck.Value := this.g_pth_Settings.enableUIAccess
@@ -1741,6 +1765,7 @@ class ExplorerDialogPathSelector {
             prefixEdit.Value := this.DefaultSettings.activeTabPrefix
             ;suffixEdit.Value := DefaultSettings.activeTabSuffix
             useBoldTextActiveCheck := this.DefaultSettings.useBoldTextActive
+            openCurrentPathCheck := this.DefaultSettings.openCurrentPath
             standardPrefixEdit.Value := this.DefaultSettings.standardEntryPrefix
             debugCheck.Value := this.DefaultSettings.enableExplorerDialogMenuDebug
             HotIfPreDetectCheck.Value := this.DefaultSettings.useHotIfPreDetection
@@ -1758,6 +1783,7 @@ class ExplorerDialogPathSelector {
             ;g_settings.activeTabSuffix := suffixEdit.Value
             this.g_pth_Settings.useHotIfPreDetection := HotIfPreDetectCheck.Value
             this.g_pth_Settings.useBoldTextActive := useBoldTextActiveCheck.Value
+            this.g_pth_Settings.openCurrentPath := openCurrentPathCheck.Value
             this.g_pth_Settings.standardEntryPrefix := standardPrefixEdit.Value
             this.g_pth_Settings.enableExplorerDialogMenuDebug := debugCheck.Value
             this.g_pth_Settings.alwaysShowClipboardmenuItem := clipboardCheck.Value
