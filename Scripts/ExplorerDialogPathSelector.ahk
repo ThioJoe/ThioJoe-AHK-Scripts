@@ -1356,6 +1356,7 @@ class ExplorerDialogPathSelector {
                 OutputDebug("`n`nFolderBrowserDialog detected. Navigating using legacy folder dialog.")
                 this.NavigateLegacyFolderDialog(path, dialogInfo.ControlHwnd)
             }
+            
         }
         
         NavigateUsingAddressbar(path, windowHwnd) {
@@ -1516,6 +1517,8 @@ class ExplorerDialogPathSelector {
             }
             return
         }
+
+        return 0
     }
 
     ;@region Legacy Nav
@@ -1647,6 +1650,7 @@ class ExplorerDialogPathSelector {
             selectedFile := FileSelect(3, unset, "Select dopusrt.exe", "Executable (*.exe)")
             if selectedFile
                 editControl.Value := selectedFile
+            return 0
         }
         ; --------------------------------------------------------------------------------------------------
 
@@ -1930,6 +1934,7 @@ class ExplorerDialogPathSelector {
             } else {
                 settingsGui.Opt("-AlwaysOnTop")
             }
+            return 0
         }
 
         ToggleAlwaysOnTopCheckVisibility(keepOpenCheckValue) {
@@ -1941,6 +1946,7 @@ class ExplorerDialogPathSelector {
                     keepOnTopCheck.Visible := false
                 }
             }
+            return 0
         }
     }
 
@@ -2392,6 +2398,8 @@ class ExplorerDialogPathSelector {
                 }
             }
         }
+
+        return 0
     }
 
     ;@region Help Condition
@@ -2542,6 +2550,8 @@ class ExplorerDialogPathSelector {
 
         ; Default to focus on the close button
         closeButton.Focus()
+
+        return 0
     }
 
     ;@region Favorites GUI
@@ -2600,6 +2610,8 @@ class ExplorerDialogPathSelector {
             ; Close the GUI
             pathGui.Destroy()
         }
+
+        return 0
     }
 
     ;@region Help Main
