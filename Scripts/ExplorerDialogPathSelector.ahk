@@ -910,7 +910,7 @@ class ExplorerDialogPathSelector {
             ;           This is probably better anyway since it makes it easier to see what parameters are being passed
             ;       So basically for the callback, we create a temporary wrapper function that calls the Navigate function with the parameters we want
             ;           And apparently this doesn't have issues with classes / this references like the other way did
-            menuObj.Insert(unset, text, (iName, iPos, mObj) => this.Navigate(iName, iPos, mObj, pathStr, windowClass, windowID))
+            menuObj.Insert(unset, text, (iName, iPos, mObj) => this.Navigate(iName, iPos, mObj, pathStr, windowClass, windowID)?)
             
             currentMenuNum++
 
@@ -1259,7 +1259,7 @@ class ExplorerDialogPathSelector {
             menuText := this.g_pth_Settings.standardEntryPrefix "Open Path in Explorer"
 
             ; Set menu item and callback to expression that runs 'start' with the path
-            CurrentLocations.Insert(unset, menuText, (iName, iPos, mObj) => Run('"' windowPath '"'), unset)
+            CurrentLocations.Insert(unset, menuText, (iName, iPos, mObj) => Run('"' windowPath '"')?, unset)
             currentMenuNum++ ; We aren't using our InsertMenuItem function because we need a custom callback, so we need to manually increment the number
             ; Set the icon
             CurrentLocations.SetIcon(currentMenuNum "&", A_WinDir . "\system32\shell32.dll", "-16769")
@@ -1677,7 +1677,7 @@ class ExplorerDialogPathSelector {
         ExplorerDialogPathSelector.AddTooltipToControl(hTT, dopusPathEdit.Hwnd, labelOpusRTPathTooltipText)
         ; DOpusRT Browse - Button
         browseBtn := settingsGui.AddButton("x+5 yp w60", "Browse...")
-        browseBtn.OnEvent("Click", (*) => BrowseForDopusRT(dopusPathEdit))
+        browseBtn.OnEvent("Click", (*) => BrowseForDopusRT(dopusPathEdit)?)
 
         ; Set Active Prefix - Edit Box
         labelActiveTabPrefix := settingsGui.AddText("xm y+10 w120 h23 +0x200", "Active Tab Prefix:")
@@ -1702,11 +1702,11 @@ class ExplorerDialogPathSelector {
 
         ; Bring up favorites setting GUI - Button
         favoritesBtn := settingsGui.AddButton("xm y+10 w120 h30", "Favorites")
-        favoritesBtn.OnEvent("Click", (*) => this.ShowFavoritePathsGui())
+        favoritesBtn.OnEvent("Click", (*) => this.ShowFavoritePathsGui()?)
 
         ; Bring up conditional favorites GUI - Button
         conditionalFavoritesBtn := settingsGui.AddButton("xp+130 yp+0 w150 h30", "Conditional Favorites")
-        conditionalFavoritesBtn.OnEvent("Click", (*) => this.ShowConditionalFavoritesGui())
+        conditionalFavoritesBtn.OnEvent("Click", (*) => this.ShowConditionalFavoritesGui()?)
         
         ; Debug Mode - Checkbox
         debugCheck := settingsGui.AddCheckbox("xm y+15", "Enable Debug Mode")
@@ -1782,7 +1782,7 @@ class ExplorerDialogPathSelector {
         keepOpenCheck := settingsGui.AddCheckbox("xm y+10", "Keep This Window Open After Saving")
         keepOpenCheck.SetFont("s9") ; Smaller font for this checkbox
         keepOpenCheck.Value := false ; False by default - This isn't a saved setting, just a temporary preference
-        keepOpenCheck.OnEvent("Click", (*) => ToggleAlwaysOnTopCheckVisibility(keepOpenCheck.Value))
+        keepOpenCheck.OnEvent("Click", (*) => ToggleAlwaysOnTopCheckVisibility(keepOpenCheck.Value)?)
         labelKeepOpenCheckTooltipText := "Keep this window open after saving the settings.`nGood for experimenting with different settings.`n`n(Note: This checkbox setting is not saved.)"
         ExplorerDialogPathSelector.AddTooltipToControl(hTT, keepOpenCheck.Hwnd, labelKeepOpenCheckTooltipText)
 
@@ -1790,7 +1790,7 @@ class ExplorerDialogPathSelector {
         keepOnTopCheck := settingsGui.AddCheckbox("xm y+5 +Hidden1", "Keep This Window Always On Top") ; +Hidden hides by default, but setting +Hidden1 to make it explicitly hidden
         keepOnTopCheck.SetFont("s9") ; Smaller font for this checkbox
         keepOnTopCheck.Value := false ; False by default - This isn't a saved setting, just a temporary preference
-        keepOnTopCheck.OnEvent("Click", (*) => SetSettingsWindowAlwaysOnTop(keepOnTopCheck.Value))
+        keepOnTopCheck.OnEvent("Click", (*) => SetSettingsWindowAlwaysOnTop(keepOnTopCheck.Value)?)
         labelKeepOnTopCheckTooltipText := "Keep this window always on top of other windows.`nGood for keeping it visible while testing settings.`n`n(Note: This checkbox setting is not saved.)"
         ExplorerDialogPathSelector.AddTooltipToControl(hTT, keepOnTopCheck.Hwnd, labelKeepOnTopCheckTooltipText)
 
@@ -2456,7 +2456,7 @@ class ExplorerDialogPathSelector {
 
         examplesBtn := helpGui.AddButton("xm y+10 w120", "Show Examples")
         ; examplesBtn.OnEvent("Click", this.ShowConditionalFavoriteExamplesGui)
-        examplesBtn.OnEvent("Click", (*) => ExplorerDialogPathSelector.ShowConditionalFavoriteExamplesGui())
+        examplesBtn.OnEvent("Click", (*) => ExplorerDialogPathSelector.ShowConditionalFavoriteExamplesGui()?)
 
         ; Paths Section
         pathsHeader := helpGui.AddText("xm y+10 " txtWStr " h20", "Paths:")
