@@ -24,7 +24,7 @@ SetWorkingDir(A_ScriptDir)
 
 ; Set global variables about the program and compiler directives. These use regex to extract data from the lines above them (A_PriorLine)
 ; Keep the line pairs together!
-global g_pathSelector_version := "1.7.1.0"
+global g_pathSelector_version := "1.7.2.0"
 ;@Ahk2Exe-Let ProgramVersion=%A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 global g_pathSelector_programName := "Explorer Dialog Path Selector"
@@ -1388,13 +1388,44 @@ class ExplorerDialogPathSelector {
                 }
             }
 
+            ; Wait for the address bar to contain the path
+            WaitForText() {
+                ; Sleep(10) ; Short initial wait
+                local text := ControlGetText(addressBarClassNN, "ahk_id " windowHwnd)
+                if (text != path) {
+                    if (waitedMs <= 300) {
+                        Sleep(eachWaitTime)
+                        waitedMs += eachWaitTime
+                        OutputDebug("Waiting for address bar text to update. Waited " (waitedMs) "ms`n")
+                        WaitForText()
+                    }
+                }
+            }
+
             CheckAddressbarReadyAndNavigate() {
                 CheckAddressbarFocused() ; This is recusive and will wait for it to be focused
                 
                 if (foundBar = true) {
                     ControlSetText(path, addressBarClassNN, "ahk_id " windowHwnd)
-                    ControlSend("{Enter}", addressBarClassNN, "ahk_id " windowHwnd)
-                    ControlFocus("Edit1", "ahk_id " windowHwnd) ; Return focus to the file name box
+                    WaitForText()
+                    ControlFocus(addressBarClassNN, "ahk_id " windowHwnd) ; Ensure address bar is still focused, it should be
+                    ; Send Enter key down and up messages directly to the control
+                    PostMessage(
+                        0x0100,                 ; msg: WM_KEYDOWN
+                        0x0D,                   ; wParam: The virtual key code of the key - 0x0D = Enter
+                        0x001C0001,             ; lParam: The repeat count, scan code, extended-key flag, context code, previous key-state flag, and transition-state flag
+                        addressBarClassNN,      ; Control ID -- When excluded it goes to the target window not a specific control
+                        "ahk_id " windowHwnd,   ; WinTitle
+                        unset, unset, unset     ; Wintext, ExcludeTitle, ExcludeText
+                    )
+                    PostMessage(
+                        0x0101,                 ; msg: WM_KEYUP
+                        0x0D,                   ; wParam: The virtual key code of the key - 0x0D = Enter
+                        0xC01C0001,             ; lParam: The repeat count, scan code, extended-key flag, context code, previous key-state flag, and transition-state flag
+                        addressBarClassNN,      ; Control ID -- When excluded it goes to the target window not a specific control
+                        "ahk_id " windowHwnd,   ; WinTitle
+                        unset, unset, unset     ; Wintext, ExcludeTitle, ExcludeText
+                    )
                 } else {
                     OutputDebug("Address bar not found or didn't match expected class name. Found ClassNN: " addressBarClassNN "`n")
                 }
@@ -1420,6 +1451,7 @@ class ExplorerDialogPathSelector {
             ; Restore the original file name if it was there
             if (originalFileName != "") {
                 ControlSetText(originalFileName, "Edit1", "ahk_id " windowHwnd)
+                ControlFocus("Edit1", "ahk_id " windowHwnd) ; Return focus to the file name box
             } else {
                 OutputDebug("`nOriginal file name not found or no file name box handle")
             }
