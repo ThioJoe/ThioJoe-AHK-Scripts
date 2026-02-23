@@ -24,7 +24,7 @@ SetWorkingDir(A_ScriptDir)
 
 ; Set global variables about the program and compiler directives. These use regex to extract data from the lines above them (A_PriorLine)
 ; Keep the line pairs together!
-global g_pathSelector_version := "1.7.2.0"
+global g_pathSelector_version := "1.8.0.0"
 ;@Ahk2Exe-Let ProgramVersion=%A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 global g_pathSelector_programName := "Explorer Dialog Path Selector"
@@ -1265,6 +1265,38 @@ class ExplorerDialogPathSelector {
             CurrentLocations.SetIcon(currentMenuNum "&", A_WinDir . "\system32\shell32.dll", "-16769")
 
             hasItems := true
+        }
+
+        ; If Debug Mode is enabled, show a menu item with the dialog's parent window title and other info
+        if (debugMode) {
+            if (hasItems)
+                InsertMenuItem(CurrentLocations, "", unset, unset, unset, unset) ; Separator
+            hasItems := true
+
+            InsertMenuItem(CurrentLocations, "DEBUG INFO:", unset, unset, unset, unset) ; Header
+            
+            ; Parent Window Title
+            if (parentWindowTitle == "")
+                titleToShow := "[Unknown - Empty String]"
+            else
+                titleToShow := parentWindowTitle
+
+            menuText := "Parent Window Title = " titleToShow
+            InsertMenuItem(CurrentLocations, menuText, unset, unset, unset, unset)
+
+            ; Parent Process
+            menuText := "Parent Process = " windowExe
+            InsertMenuItem(CurrentLocations, menuText, unset, unset, unset, unset)
+
+            ; Window File Filter
+            if (windowFilter != "")
+                filterToShow := windowFilter
+            else
+                filterToShow := "[Unknown - Empty String]"
+
+            menuText := "`nDialog File Filter = " windowFilter
+            InsertMenuItem(CurrentLocations, menuText, unset, unset, unset, unset)
+            
         }
 
         RemoveToolTip() {
