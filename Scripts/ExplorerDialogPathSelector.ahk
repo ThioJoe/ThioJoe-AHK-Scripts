@@ -2526,6 +2526,8 @@ class ExplorerDialogPathSelector {
         helpGui.AddText("xm+15 y+2 " txtWStr, "• Multiple values can be set per rule (one per line)")
         helpGui.AddText("xm+15 y+2 " txtWStr, "• If any values match, all associated paths will be shown")
 
+        helpGui.AddText("xm y+10 " txtWStr, "Tip: Enabling Debug Mode will show info in the path selection menu useful for creating conditional favorites.")
+
         examplesBtn := helpGui.AddButton("xm y+10 w120", "Show Examples")
         ; examplesBtn.OnEvent("Click", this.ShowConditionalFavoriteExamplesGui)
         examplesBtn.OnEvent("Click", (*) => ExplorerDialogPathSelector.ShowConditionalFavoriteExamplesGui())
