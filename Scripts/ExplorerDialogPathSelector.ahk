@@ -69,6 +69,12 @@ class ExplorerDialogPathSelector {
         computer: "Computer",
         myComputer: "My Computer",
         desktop: "Desktop",
+        open: "Open",
+        saveAs: "Save As",
+        saveCmd: "&Save",
+        openCmd: "&Open",
+        export: "Export",
+        import: "Import",
         addressBarKey: "d" ; The 'Alt' key to focus the address bar in Explorer dialogs. May be different in other languages so need to get that too
     }
 
@@ -318,10 +324,18 @@ class ExplorerDialogPathSelector {
         ; Resource string addresses
         addressbarRes := "@%SystemRoot%\system32\explorerframe.dll,-13829" ; "Address: %s" (Need to remove the %s part)
         addressbarKeyStrRes := "@%SystemRoot%\system32\explorerframe.dll,-12896" ; "A&ddress" (Need to get the character after the &). NOT resource 13137
+
         thisPCRes := "@%SystemRoot%\system32\shell32.dll,-30621" ; "This PC"
         computerRes := "@%SystemRoot%\system32\shell32.dll,-30480" ; "Computer"
         myComputerRes := "@%SystemRoot%\system32\shell32.dll,-9012" ; "My Computer"
         desktopRes := "@%SystemRoot%\system32\shell32.dll,-4162" ; "Desktop"
+
+        OpenRes := "@%SystemRoot%\system32\comdlg32.dll,-384" ; "Open"
+        SaveAsRes := "@%SystemRoot%\system32\comdlg32.dll,-385" ; "Save As" -- Also good to know:  -368 = "Save &in"
+        OpenCmdRes := "@%SystemRoot%\system32\comdlg32.dll,-370" ; "&Open"
+        SaveCmdRes := "@%SystemRoot%\system32\comdlg32.dll,-369" ; "&Save"
+        ExportRes := "@%SystemRoot%\system32\mmcndmgr.dll,-30180" ; "Export"
+        ImportRes := "@%SystemRoot%\system32\mmcndmgr.dll,-30178" ; "Import"
 
         ; Ones that need further processing
         addressBarRaw := this.ResolveWindowsResource(addressbarRes)
@@ -330,6 +344,13 @@ class ExplorerDialogPathSelector {
         computerResRaw := this.ResolveWindowsResource(computerRes)
         myComputerResRaw := this.ResolveWindowsResource(myComputerRes)
         desktopResRaw := this.ResolveWindowsResource(desktopRes)
+        openResRaw := this.ResolveWindowsResource(OpenRes)
+        saveAsResRaw := this.ResolveWindowsResource(SaveAsRes)
+        openCmdResRaw := this.ResolveWindowsResource(OpenCmdRes)
+        saveCmdResRaw := this.ResolveWindowsResource(SaveCmdRes)
+        exportResRaw := this.ResolveWindowsResource(ExportRes)
+        importResRaw := this.ResolveWindowsResource(ImportRes)
+
 
         ; If the result isn't false, we can set the string
         if (addressBarRaw)
@@ -344,6 +365,18 @@ class ExplorerDialogPathSelector {
             this.localstr.myComputer := myComputerResRaw
         if (desktopResRaw)
             this.localstr.desktop := desktopResRaw
+        if (openResRaw)
+            this.localstr.open := openResRaw
+        if (saveAsResRaw)
+            this.localstr.saveAs := saveAsResRaw
+        if (openCmdResRaw)
+            this.localstr.openCmd := openCmdResRaw
+        if (saveCmdResRaw)
+            this.localstr.saveCmd := saveCmdResRaw
+        if (exportResRaw)
+            this.localstr.export := exportResRaw
+        if (importResRaw)
+            this.localstr.import := importResRaw
 
         ; If the system language is not English, set isEnglish to false
             this.localstr.isEnglish := this.IsSystemLanguageEnglish()
@@ -396,23 +429,72 @@ class ExplorerDialogPathSelector {
         return RegExMatch(path, "^[^<>`"\/|?]+$")
     }
 
+    ValidateConditionLine(conditionLine) {
+        ; Condition values can optionally have a dialog type prefix like "open::" or "save::" before the actual match string
+        parsed := this.ParseConditionValueDialogType(conditionLine)
+        actualValue := parsed.matchString
+
+        if (Trim(actualValue) = "") {
+            MsgBox("Invalid condition value:`n" conditionLine "`n`nThe match string cannot be empty.`n`nPlease correct and try again.", "Error", "Icon!")
+            return false
+        }
+
+        if (!this.ValidatePathCharacters_AllowWildCards(actualValue)) {
+            MsgBox("Invalid characters found in condition value:`n" actualValue "`n`nCannot contain these characters:`n< > `" / | ? `n`nPlease correct and try again.", "Error", "Icon!")
+            return false
+        }
+
+        return true
+    }
+
+    /**
+     * Parses a condition value string to extract an optional dialog type prefix ("open::" or "save::").
+     * @param conditionValue The raw condition value string, e.g. "open::notepad.exe" or just "notepad.exe"
+     * @returns {Object} An object with properties:
+     *   - dialogTypeFilter: The DialogType to filter by, or empty string if no filter
+     *   - matchString: The actual match string with the prefix removed
+     */
+    ParseConditionValueDialogType(conditionValue) {
+        result := { dialogTypeFilter: "", matchString: conditionValue }
+
+        if (InStr(conditionValue, "::")) {
+            parts := StrSplit(conditionValue, "::",, 2) ; Max 2 parts - split only on the first ::
+            prefix := Trim(parts[1])
+
+            if (StrLower(prefix) = "open") {
+                result.dialogTypeFilter := ExplorerDialogPathSelector.DialogType.Open
+                result.matchString := parts[2]
+            } else if (StrLower(prefix) = "save") {
+                result.dialogTypeFilter := ExplorerDialogPathSelector.DialogType.Save
+                result.matchString := parts[2]
+            }
+            ; If the prefix isn't "open" or "save", treat the whole string as the match value (no prefix)
+        }
+
+        return result
+    }
+
     ValidateFavoritesPathLine(pathLine) {
+        ; Strip optional dialog type prefix (open:: or save::) before validating the rest
+        parsedDialogType := this.ParseConditionValueDialogType(pathLine)
+        remainingLine := parsedDialogType.matchString
+
         ; If there's no :: delimiter for a custom display name, use standard character validation
-        if (!InStr(pathLine, "::")) {
-            if (!this.ValidatePathCharacters(pathLine)) {
-                MsgBox("Invalid characters found in path:`n" pathLine "`n`nCannot contain these characters:`n< > `" / | * ? `n`nPlease correct and try again.", "Error", "Icon!")
+        if (!InStr(remainingLine, "::")) {
+            if (!this.ValidatePathCharacters(remainingLine)) {
+                MsgBox("Invalid characters found in path:`n" remainingLine "`n`nCannot contain these characters:`n< > `" / | * ? `n`nPlease correct and try again.", "Error", "Icon!")
                 return false
             } else {
                 return true
             }
         ; If there is a favorite display name set
         } else {
-            parts := StrSplit(pathLine, "::")
+            parts := StrSplit(remainingLine, "::")
 
             ; ---- Error Conditions ----
             ; If there are too many parts from using more than one delimiter
             if (parts.Length != 2) {
-                MsgBox("Invalid favorite path line:`n" pathLine "`n`nMust contain only one '::' delimiter to separate the custom display name and the path.`n`nPlease correct and try again.", "Error", "Icon!")
+                MsgBox("Invalid favorite path line:`n" pathLine "`n`nMust contain only one '::' delimiter to separate the custom display name and the path (excluding any open::/save:: prefix).`n`nPlease correct and try again.", "Error", "Icon!")
                 return false
             ; Either a display name or path is not included or empty
             } else if (Trim(parts[1]) = "" or Trim(parts[2] = "")) {
@@ -452,6 +534,13 @@ class ExplorerDialogPathSelector {
             FriendlyName: "Dialog File Type Filter",
             Description: "If the dialog window filters for file extensions that matches the value. ( * is a wildcard )"
         }
+    }
+
+    ; Enum class for dialog type
+    class DialogType {
+        static Open := "Open"
+        static Save := "Save"
+        static Unknown := "Unknown"
     }
 
     ; Check for match using strings with wildcard asterisks
@@ -1007,6 +1096,7 @@ class ExplorerDialogPathSelector {
         local windowPath := ""
         local windowFilter := ""
         local windowParent := 0
+        local dialogType := ExplorerDialogPathSelector.DialogType.Unknown
 
         ; Get the path and other info about the dialog. At this point we know it's the correct type of window
         if (windowHwnd) {
@@ -1038,6 +1128,27 @@ class ExplorerDialogPathSelector {
                 }
             } catch {
                 OutputDebug("Couldn't get window filetype filter.")
+            }
+
+            ; Try to get the text on the main button to check if it's open or save as
+            try {
+                mainButtonHwnd := DllCall("GetDlgItem", "Ptr", windowID, "Int", 1, "Ptr") ; The main button control should typically have ID of 1 (IDOK)
+                mainButtonText := ControlGetText(mainButtonHwnd)
+
+                if (mainButtonText = this.localstr.openCmd || InStr(mainButtonText, this.localstr.import)) {
+                    dialogType := ExplorerDialogPathSelector.DialogType.Open
+                } else if (mainButtonText = this.localstr.saveCmd || InStr(mainButtonText, this.localstr.export)) {
+                    dialogType := ExplorerDialogPathSelector.DialogType.Save
+                } else { 
+                    ; Try getting the Window title next, to see if it contains Save or Open
+                    if (InStr(WinGetTitle("ahk_id " windowID), this.localstr.open) || InStr(WinGetTitle("ahk_id " windowID), this.localstr.import)) {
+                        dialogType := ExplorerDialogPathSelector.DialogType.Open
+                    } else if (InStr(WinGetTitle("ahk_id " windowID), this.localstr.saveAs) || InStr(WinGetTitle("ahk_id " windowID), this.localstr.export)) {
+                        dialogType := ExplorerDialogPathSelector.DialogType.Save
+                    }
+                }
+            } catch {
+                OutputDebug("Couldn't get main button text to determine dialog type.")
             }
         }
 
@@ -1104,11 +1215,29 @@ class ExplorerDialogPathSelector {
                 for favorite in currentGroup {
                     ; Users can set multiple conditions match strings per conditional favorite entry
                     for conditionValue in favorite.ConditionValues {
-                        if (this.StringMatchWithWildcards(itemToMatch, conditionValue)) {
-                            InsertMenuItem(CurrentLocations, sectionHeader, unset, unset, unset, unset) ; Header
+                        ; Parse optional dialog type prefix (e.g. "open::" or "save::") from the condition value
+                        parsedCondition := this.ParseConditionValueDialogType(conditionValue)
+                        actualMatchString := parsedCondition.matchString
+                        conditionDialogTypeFilter := parsedCondition.dialogTypeFilter
+
+                        ; If the condition value has a dialog type filter, skip if the current dialog doesn't match (but if dialog type is unknown, ignore the filter and show all)
+                        if (conditionDialogTypeFilter != "" and conditionDialogTypeFilter != dialogType and dialogType != ExplorerDialogPathSelector.DialogType.Unknown)
+                            continue
+
+                        if (this.StringMatchWithWildcards(itemToMatch, actualMatchString)) {
 
                             ; Users can set multiple paths to show per conditional favorite entry upon a match. So loop through to show them all
+                            addedAtLeastOnePath := false
                             for conditionPath in favorite.Paths {
+                                ; Parse optional dialog type prefix (e.g. "open::" or "save::") from the path entry
+                                parsedPathDialogType := this.ParseConditionValueDialogType(conditionPath)
+                                pathDialogTypeFilter := parsedPathDialogType.dialogTypeFilter
+                                conditionPath := parsedPathDialogType.matchString ; Remove any dialog type prefix from the path string
+
+                                ; If the path has a dialog type filter, skip it if the current dialog doesn't match (but if dialog type is unknown, ignore the filter and show all)
+                                if (pathDialogTypeFilter != "" and pathDialogTypeFilter != dialogType and dialogType != ExplorerDialogPathSelector.DialogType.Unknown)
+                                    continue
+
                                 ; Users can add double colons before a path to set a custom display name, by putting the name before the double colons, like  "Whatever Name::C:\Users\Blah"
                                 if (InStr(conditionPath, "::")) {
                                     pathStrParts := StrSplit(conditionPath, "::")
@@ -1119,6 +1248,12 @@ class ExplorerDialogPathSelector {
                                     conditionDisplayPath := ExplorerDialogPathSelector.GetExpandedPath(conditionPath)
                                 else ; Default to just showing the full path
                                     conditionDisplayPath := conditionPath
+
+                                ; Only add the section header before the first path that actually gets shown
+                                if (!addedAtLeastOnePath) {
+                                    InsertMenuItem(CurrentLocations, sectionHeader, unset, unset, unset, unset) ; Header
+                                    addedAtLeastOnePath := true
+                                }
 
                                 InsertMenuItem(CurrentLocations, this.g_pth_settings.standardEntryPrefix conditionDisplayPath, conditionPath, A_WinDir . "\system32\imageres.dll", "-81", false) ; Conditional Favorite Path
                                 hasItems := true
@@ -1295,6 +1430,17 @@ class ExplorerDialogPathSelector {
                 filterToShow := "[Unknown - Empty String]"
 
             menuText := "`nDialog File Filter = " windowFilter
+            InsertMenuItem(CurrentLocations, menuText, unset, unset, unset, unset)
+
+            ; Open vs Close Dialog Type
+            if (dialogType = ExplorerDialogPathSelector.DialogType.Open)
+                dialogTypeText := "Open Dialog"
+            else if (dialogType = ExplorerDialogPathSelector.DialogType.Save)
+                dialogTypeText := "Save Dialog"
+            else
+                dialogTypeText := "Unknown"
+            
+            menuText := "`nDialog Type = " dialogTypeText
             InsertMenuItem(CurrentLocations, menuText, unset, unset, unset, unset)
             
         }
@@ -2310,8 +2456,7 @@ class ExplorerDialogPathSelector {
 
                 ; Validate values
                 for value in entry.ConditionValues {
-                    if (!this.ValidatePathCharacters_AllowWildCards(value)) {
-                        MsgBox("Invalid characters found in value:`n" value "`n`nCannot contain these characters:`n< > `" / | ? `n`nPlease correct and try again.", "Error", "Icon!")
+                    if (!this.ValidateConditionLine(value)) {
                         return
                     }
                 }
@@ -2526,6 +2671,11 @@ class ExplorerDialogPathSelector {
         helpGui.AddText("xm+15 y+2 " txtWStr, "• Multiple values can be set per rule (one per line)")
         helpGui.AddText("xm+15 y+2 " txtWStr, "• If any values match, all associated paths will be shown")
 
+        ; --- Dialog Type Filter
+        dialogFilterHeader := helpGui.AddText("xm y+15 " txtWStr " h20", "Dialog Type Filter:")
+        dialogFilterHeader.SetFont("italic")
+        helpGui.AddText("xm+15 y+2 " txtWStr " +Wrap", "You can optionally prefix a condition value or path with 'open::' or 'save::' to restrict it to only Open or Save dialogs. For example:")
+        helpGui.AddText("xm+15 y+2 " txtWStr, "       open::notepad.exe")
         helpGui.AddText("xm y+10 " txtWStr, "Tip: Enabling Debug Mode will show info in the path selection menu useful for creating conditional favorites.")
 
         examplesBtn := helpGui.AddButton("xm y+10 w120", "Show Examples")
@@ -2539,7 +2689,10 @@ class ExplorerDialogPathSelector {
         pathsText := "• These are the paths that will be shown when the condition values match.`n"
                 . "• You can set a custom display name for any path by preceding the path with some name followed by two colons ( :: )"
                 . "`n     For example:`n"
-                . "           My Favorite Path::C:\Whatever\Path"
+                . "           My Favorite Path::C:\Whatever\Path`n"
+                . "• You can also prefix a path with 'open::' or 'save::' to only show it for that dialog type. For example:"
+                . "`n           open::C:\Downloads`n"
+                . "`n  Paths without a prefix are shown for both dialog types."
         helpGui.AddText("xm y+5 " txtWStr, pathsText)
 
         ; Close button
