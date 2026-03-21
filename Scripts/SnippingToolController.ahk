@@ -4,7 +4,7 @@
 ; Purpose: This script allows you to launch Snipping Tool directly to specific modes.
 ; Author:  ThioJoe
 ; Repo:    https://github.com/ThioJoe/ThioJoe-AHK-Scripts
-; Version: 1.4.0
+; Version: 1.4.1
 ; -----------------------------------------------
 ;
 ; REQUIRED: Set the path to the required UIA.ahk class file. Here it is up one directory then in the Lib folder. If it's in the same folder it would be:  #Include "UIA.ahk"
@@ -119,6 +119,8 @@ class SnippingToolController {
         } else {
             OutputDebug("`nFailed to resolve NewNotificationString. Using default: " this.NewNotificationString)
         }
+
+        this.toastString := this.NewNotificationString " ahk_exe ShellExperienceHost.exe"
 
         ; If using debug mode, output the resolved strings
         if (this.DebugMode) {
