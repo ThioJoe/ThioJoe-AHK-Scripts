@@ -24,7 +24,7 @@ SetWorkingDir(A_ScriptDir)
 
 ; Set global variables about the program and compiler directives. These use regex to extract data from the lines above them (A_PriorLine)
 ; Keep the line pairs together!
-global g_pathSelector_version := "1.8.0.0"
+global g_pathSelector_version := "1.8.1.0"
 ;@Ahk2Exe-Let ProgramVersion=%A_PriorLine~U)^(.+"){1}(.+)".*$~$2%
 
 global g_pathSelector_programName := "Explorer Dialog Path Selector"
@@ -784,9 +784,13 @@ class ExplorerDialogPathSelector {
             return []
         }
 
-        if !FileExist(this.g_pth_Settings.dopusRTPath) {
+        if (not FileExist(this.g_pth_Settings.dopusRTPath)) {
             MsgBox("Directory Opus Runtime (dopusrt.exe) not found at:`n" this.g_pth_Settings.dopusRTPath "`n`nDirectory Opus integration won't work. To enable it, set the correct path in the script configuration. Or set it to an empty string to avoid this error.", "DOpus Integration Error", "Icon!")
             return []
+        }
+
+        if (not ProcessExist("dopus.exe")) {
+            return [] ; If directory opus is not running we don't need to even check
         }
 
         tempFile := A_Temp "\dopus_paths.xml"
@@ -796,7 +800,7 @@ class ExplorerDialogPathSelector {
             cmd := '"' this.g_pth_Settings.dopusRTPath '" /info "' tempFile '",paths'
             RunWait(cmd, unset, "Hide")
 
-            if !FileExist(tempFile)
+            if (not FileExist(tempFile))
                 return []
 
             xmlContent := FileRead(tempFile)
