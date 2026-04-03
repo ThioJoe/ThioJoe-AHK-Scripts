@@ -1,4 +1,4 @@
-#Requires AutoHotkey >= v2.1-alpha.9
+; #Requires AutoHotkey >= v2.1-alpha.9
 
 ; Various utility functions. This script doesn't run anything by itself, but is meant to be included in other scripts
 
@@ -29,6 +29,7 @@ class ControlInfo {
 
 ; Type Definition Notes. For some reason need to use 'i32' instead of 'Integer'
 
+;@region General
 ;; ------------------- General --------------------
 
 /**
@@ -117,6 +118,68 @@ static JoinSelectedLines(addSpace := true) {
     A_Clipboard := OriginalFullClipboard
 }
 
+/**
+ * Extracts a table as plaintext from an HTML fragment of a table, like if copied from a web browser
+ * @param {String} HtmlFormat
+ * @returns {String} 
+ */
+static ExtractTableFromHtml(HtmlFormat) {
+    ; The Windows clipboard HTML format often includes a bunch of metadata headers.
+    ; We use RegExReplace to strip those away to get to the actual HTML starting at <html>
+    ; The "(?s)" option allows the dot (.) to match newlines as well.
+    HtmlContent := RegExReplace(HtmlFormat, "(?s)^.*?(<html.*)", "$1")
+
+    ; Note: We use regex instead of ComObject("HTMLFile") DOM traversal because AHK v2's
+    ; COM interop cannot dispatch element-level properties (.rows, .cells) on HTMLFile objects.
+    ; Document-level methods work, but child element access throws 0x80070057 / 0x800A01B6.
+    ; PowerShell doesn't have this issue because .NET's COM layer resolves interfaces differently.
+
+    ; Find the first <table>...</table> block
+    if !RegExMatch(HtmlContent, "si)<table[^>]*>(.*?)</table>", &tableMatch) {
+        MsgBox("No actual <table> tags found in the provided HTML.")
+        return ""
+    }
+
+    tableHtml := tableMatch[1]
+    OutputText := ""
+
+    ; Extract each row: <tr>...</tr>
+    rowPos := 1
+    while RegExMatch(tableHtml, "si)<tr[^>]*>(.*?)</tr>", &rowMatch, rowPos) {
+        rowHtml := rowMatch[1]
+        rowPos := rowMatch.Pos + rowMatch.Len
+
+        ; Extract each cell: <td>...</td> or <th>...</th>
+        cellPos := 1
+        cellIndex := 0
+        RowText := ""
+        while RegExMatch(rowHtml, "si)<t[dh][^>]*>(.*?)</t[dh]>", &cellMatch, cellPos) {
+            cellText := cellMatch[1]
+            cellPos := cellMatch.Pos + cellMatch.Len
+
+            ; Strip any remaining HTML tags from cell content and trim whitespace
+            cellText := RegExReplace(cellText, "<[^>]+>")
+            cellText := Trim(cellText)
+
+            ; Add tab separator between cells (not before the first one)
+            if (cellIndex > 0)
+                RowText .= "`t"
+            RowText .= cellText
+            cellIndex++
+        }
+
+        ; Strip any leading tabs from the row (e.g. from empty first cells)
+        RowText := RegExReplace(RowText, "^\t+")
+
+        ; Append a carriage return and linefeed after every row
+        OutputText .= RowText . "`r`n"
+    }
+
+    ; Return the nicely formatted tab-separated text
+    return OutputText
+}
+
+;@region Mouse/Cursor
 ;; ------------------- Mouse and Cursor Related --------------------
 
 /**
@@ -253,7 +316,7 @@ static CheckMouseOverControlAdvanced(winTitle, ctl := '', ctlMinWidth := 0) {
  */
 static CheckMouseOverProgram(programTitle) {
     MouseGetPos(unset, unset, &hWnd, unset, unset)
-    return WinExist(programTitle " ahk_id" hWnd)
+    return WinExist(programTitle " ahk_id " hWnd)
 }
 
 /**
@@ -298,6 +361,38 @@ static GetControlUnderMouseHandleID() {
     return controlHandleID
 }
 
+static GetExePathUnderMouse() {
+    hwnd := ThioUtils.GetWindowHwndUnderMouse()
+    if !hwnd
+        return "Couldn't Get Hwnd under mouse"
+
+    ; Get the process ID of the window
+    pid := 0
+    DllCall("GetWindowThreadProcessId", "Ptr", hwnd, "UInt*", &pid)
+    if !pid
+        return "Error: Couldn't get process ID"
+
+    ; Get the process handle
+    hProcess := DllCall("OpenProcess", "UInt", 0x0410, "Int", False, "UInt", pid, "Ptr")
+
+    if !hProcess
+        return "Error: Couldn't get process handle"
+
+    ; Get the executable path
+    ; Use 32767 (max extended-length path) to support long paths if enabled
+    maxPath := 32767
+    exePath := Buffer(maxPath * 2)  ; *2 for UTF-16 (wide chars)
+    size := maxPath
+    if DllCall("QueryFullProcessImageNameW", "Ptr", hProcess, "UInt", 0, "Ptr", exePath, "UInt*", &size) {
+        DllCall("CloseHandle", "Ptr", hProcess)
+        return StrGet(exePath)
+    } else {
+        DllCall("CloseHandle", "Ptr", hProcess)
+        return "Error: Couldn't get executable path"
+    }
+}
+
+;@region Prompts
 ;; ------------------ Prompts -----------------------
 
 /**
@@ -328,10 +423,11 @@ static ShowDirectoryPathEntryBox() {
     }
 }
 
+;@region Manipulate Input
 ;; ------------------ Manipulate User Input --------------------
 
 /**
- * Uses Windows API SendMessage to directly send a mouse wheel movement message to a window. Instead o fusing multiple wheel scroll events.
+ * Uses Windows API SendMessage to directly send a mouse wheel movement message to a window. Instead of using multiple wheel scroll events.
  * This is useful for apps that ignore the Windows scroll speed / scroll line amount settings.
  * @param {Number} multiplier Scroll multiplier - positive for scrolling up, negative for scrolling down
  * @param {Bool} forceWindowHandle Whether to force using window handle instead of control handle (default: false)
@@ -376,9 +472,10 @@ static MouseScrollMultiplied(multiplier, forceWindowHandle := false, useSendMess
     ; ToolTip("SendMessage WM_MOUSEWHEEL returned: " resultStr "`n wParam: " wParam "`n Delta: " delta "`n" using " Handle: " targetHandleID)
     ; ---------------------------------------------
 
-    ; return result
+    return 0
 }
 
+;@region Controls
 ;; ------------------ Windows and Controls -------------------------
 
 /**
@@ -455,7 +552,11 @@ static ListAllWindowsForProcess(procString := unset, detectHidden := false) {
 
                 try {
                     ; Get the extended frame bounds (visible window bounds)
-                    frameBounds := ThioUtils.RECT()
+                    if (VerCompare(A_AhkVersion, ">= AutoHotkey >= v2.1-alpha.9"))
+                        frameBounds := ThioUtils.RECT()
+                    else 
+                        frameBounds := {}
+
                     DllCall("dwmapi\DwmGetWindowAttribute",
                         "ptr", hwnd,
                         "uint", 9,  ; DWMWA_EXTENDED_FRAME_BOUNDS
@@ -592,6 +693,7 @@ static SetContextMenuTheme(appMode := 0) {
     }
 }
 
+;@region Apps/Resources
 ;; --------------------------- Windows Apps and Resources -----------------------------------
 
 /**
@@ -781,6 +883,7 @@ static LaunchProgramAtMouse(programTitle, xOffset := 0, yOffset := 0, exePath :=
     CoordMode("Mouse", originalMouseMode)
 }
 
+;@region Clipboard
 ;; --------------------------- Clipboard -----------------------------------
 
 /**
@@ -878,15 +981,29 @@ static GetClipboardFormatRawData(formatName := "", formatIDInput := unset) {
  * Simulate typing a string letter by letter
  * @param {string} text 
  * @param {integer} delayMs
+ * @param {integer=} charsPerType How many characters to type at a time
  * @returns {void}
  */
-static TypeString(text, delayMs) {
-    loop StrLen(text) {
-        SendText(SubStr(text, A_Index, 1))
-        Sleep(delayMs)
+static TypeString(text, delayMs, charsPerType := 1) {
+    if charsPerType = 1 {
+        loop StrLen(text) {
+            SendText(SubStr(text, A_Index, 1))
+            Sleep(delayMs)
+        }
+    } else {
+        totalChars := StrLen(text)
+        currentIndex := 1
+
+        while currentIndex <= totalChars {
+            chunk := SubStr(text, currentIndex, charsPerType)
+            SendText(chunk)
+            Sleep(delayMs)
+            currentIndex += charsPerType
+        }
     }
 }
 
+;@region Tooltip
 ;; ------------------------- Tooltip ------------------------------
 
 /**
@@ -897,8 +1014,9 @@ static TypeString(text, delayMs) {
  * @param {Integer} y Optional Y coordinate for tooltip position relative to mouse (default: unset for mouse position)
  * @param {Bool} repositionbottom Whether to reposition the tooltip above the mouse if y is negative. Set to false if wanting to manually position. (default: true)
  * @param {Integer} whichToolTip The tooltip ID to use (1 or 2) (default: 1)
+ * @param {Bool} absoluteCoords Whether the provided x and y coordinates are absolute screen coordinates instead of relative to mouse (default: false)
  */
-static TooltipWithDelayedRemove(text, delayMs, x := unset, y := unset, repositionbottom := true, whichToolTip := 1) {
+static TooltipWithDelayedRemove(text, delayMs, x := unset, y := unset, repositionbottom := true, whichToolTip := 1, absoluteCoords := false) {
     if (IsSet(x) && IsSet(y)) {
         ; Set the coordinates relative to the mouse
         originalTooltipCoordMode := A_CoordModeToolTip
@@ -906,12 +1024,17 @@ static TooltipWithDelayedRemove(text, delayMs, x := unset, y := unset, repositio
         CoordMode("ToolTip", "Screen")
 
         ; Get the current mouse position, adjust coords based on that
-        MouseGetPos(&mouseX, &mouseY)
-        finalX := mouseX + x
-        finalY := mouseY + y
+        if (!absoluteCoords) {
+            MouseGetPos(&mouseX, &mouseY)
+            finalX := mouseX + x
+            finalY := mouseY + y
+        } else {
+            finalX := x
+            finalY := y
+        }
 
         ; If the tooltip Y position is negative and repositionBottom is true, we'll recalculate the position so the bottom of tooltip is at the y
-        if (y < 0 && repositionbottom) {
+        if (y < 0 && repositionbottom && !absoluteCoords) {
             tooltipSize := this.GetTooltipSize(text)
             finalY := finalY - tooltipSize.Height
         }
@@ -963,7 +1086,7 @@ static GetTooltipSize(text, whichToolTip := 2) {
     return { Width: tW, Height: tH }
 }
 
-
+;@region Timing
 ;; ------------------------- High precision timer functions --------------------
 
 /**
@@ -981,15 +1104,22 @@ static StartTimer() {
  * End a high precision timer and calculate elapsed time.
  * @param {Int64} CounterBefore The performance counter value from StartTimer
  * @param {Bool} showMsgBox Whether to display the result in a message box (default: true)
+ * @param {Bool} showTooltip Whether to display the result in a tooltip (default: false)
  * @returns {Float} Elapsed time in milliseconds
  */
-static EndTimer(CounterBefore, showMsgBox := true) {
+static EndTimer(CounterBefore, showMsgBox := true, showTooltip := false) {
     DllCall("QueryPerformanceCounter", "Int64*", &CounterAfter := 0)
     DllCall("QueryPerformanceFrequency", "Int64*", &freq := 0) ; Call this again to avoid having to pass it as a parameter
-    if (showMsgBox){
-        MsgBox("Elapsed QPC time is " . (CounterAfter - CounterBefore) / freq * 1000 " ms")
+    milliseconds := (CounterAfter - CounterBefore) / freq * 1000
+
+    if (showTooltip){
+        ThioUtils.TooltipWithDelayedRemove("Elapsed QPC time is " . milliseconds . " ms", 2000)
     }
-    return (CounterAfter - CounterBefore) / freq * 1000
+
+    if (showMsgBox){
+        MsgBox("Elapsed QPC time is " . milliseconds . " ms")
+    }
+    return milliseconds
 }
 
 ; -------------------------------------------------------------------------------
