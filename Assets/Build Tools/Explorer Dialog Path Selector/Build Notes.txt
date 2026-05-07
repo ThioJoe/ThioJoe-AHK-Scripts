@@ -1,0 +1,21 @@
+Command:
+	wix build ExplorerDialogPathSelector_Installer.wxs -d ProductVersion="1.8.1.0" -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext
+
+Check wix version
+	wix --version
+
+Install specific extension versions via:
+	wix extension add -g WixToolset.UI.wixext/6.0.0
+	wix extension add -g WixToolset.Util.wixext/6.0.0
+
+
+Install extensions in general via:
+	wix extension add -g WixToolset.UI.wixext
+	wix extension add -g WixToolset.Util.wixext
+
+GUIDS used by the MSI Installer and DLL
+	- If using an AI to work on the WXS file, make sure it doesn't make a mistake when writing these
+
+	- Used only by MSI Installer:
+		UpgradeCode GUID: 		1ae4ac6b-9733-4e4a-9a8a-28cea32e9335
+		x64 Component GUID:		e4b27953-c4c0-4e6a-9190-7534a1fa5b7f

@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+    <!-- GUIDs -->
+    <?define UpgradeCodeGuid = "1ae4ac6b-9733-4e4a-9a8a-28cea32e9335" ?>
+    <?define ComponentGuidX64 = "e4b27953-c4c0-4e6a-9190-7534a1fa5b7f" ?>
+
+    <!-- Set variables depending on specific 64 bit architecture -->
+    <?if $(sys.BUILDARCH) = x64 ?>
+        <?define ComponentGuid64BitToUse = "$(var.ComponentGuidX64)" ?>
+	<!--  There's currently no arm64 version but will keep this just because. -->
+    <?elseif $(sys.BUILDARCH) = arm64 ?>
+        <?define ComponentGuid64BitToUse = "$(var.ComponentGuidArm64)" ?>
+    <?endif ?>
+
+    <Package Name="Explorer Dialog Path Selector" Language="1033" Version="$(var.ProductVersion)" Manufacturer="ThioJoe" UpgradeCode="$(var.UpgradeCodeGuid)">
+        <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+        <Media Id="1" Cabinet="cab1.cab" EmbedCab="yes" />
+
+			<!-- Define custom banner and dialog bitmaps for the installer -->
+		<WixVariable Id="WixUIDialogBmp" Overridable="yes" Value="Resources\Dialog.png" />
+		<WixVariable Id="WixUIBannerBmp" Overridable="yes" Value="Resources\Banner.png" />
+			<!-- Define the main icon for the installer UI and Add/Remove Programs -->
+			<!-- Apparently you have to first define the <Icon> then use that ID for the property. Can't just directly use the icon path in the APPPRODUCTION value -->
+		<Icon Id="MyAppIcon" SourceFile="Resources\Explorer Dialog Path Selector Icon.ico"/>
+		<Property Id="ARPPRODUCTICON" Value="MyAppIcon" />
+
+        <!-- If the installer were to ask for the installation directory, this would show. But currently it doesn't. -->
+        <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER_X64" />
+
+        <UI>
+            <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+            <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+            <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+            <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+            <DialogRef Id="ErrorDlg" />
+            <DialogRef Id="FatalError" />
+            <DialogRef Id="FilesInUse" />
+            <DialogRef Id="MsiRMFilesInUse" />
+            <DialogRef Id="PrepareDlg" />
+            <DialogRef Id="ProgressDlg" />
+            <DialogRef Id="ResumeDlg" />
+            <DialogRef Id="UserExit" />
+            <DialogRef Id="WelcomeDlg" />
+
+            <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApplication" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+            <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" />
+
+            <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg" />
+
+            <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" />
+            <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" />
+            <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
+
+            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Condition="NOT Installed" />
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2" Condition="NOT Installed" />
+
+            <Property Id="ARPNOMODIFY" Value="1" />
+       
+        </UI>
+        <UIRef Id="WixUI_Common" />
+
+        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Explorer Dialog Path Selector" />
+        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+        <Property Id="WixShellExecTarget" Value="[#File_64bit]" />
+        <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="Settings can be accessed by right-clicking the system tray icon for the app." />
+
+        <Feature Id="ProductFeature" Title="Explorer Dialog Path Selector">
+            
+            <!-- ========================= 64-bit Exe (x64 and ARM64) ========================= -->
+            <Component Id="Component_64bit" Guid="$(var.ComponentGuid64BitToUse)" Bitness="always64" Directory="INSTALLFOLDER_64Bit" >
+
+                <?if $(sys.BUILDARCH) = x64 ?>
+                    <File Id="File_64bit"
+                            Name="ExplorerDialogPathSelector.exe"
+                            Source="ExplorerDialogPathSelector.exe"
+                            KeyPath="yes" 
+                            Vital="yes"
+                            PatchWholeFile="yes"
+                            />
+                <?endif?>
+				
+                <!--  There's currently no arm64 version but will keep this just because. -->
+                <?if $(sys.BUILDARCH) = arm64 ?>
+                    <File Id="File_64bit"
+                            Name="ExplorerDialogPathSelector.exe"
+                            Source="ExplorerDialogPathSelector.exe"
+                            KeyPath="yes" 
+                            Vital="yes"
+                            PatchWholeFile="yes"
+                            />
+                <?endif?>
+				
+                <Shortcut Id="StartupShortcut" 
+                        Name="Explorer Dialog Path Selector" 
+                        Directory="StartupFolder" 
+                        Target="[#File_64bit]"
+                        WorkingDirectory="INSTALLFOLDER_64Bit" />
+
+            </Component>
+			
+        </Feature>
+		
+    </Package>
+
+    <Fragment>
+		<StandardDirectory Id="StartupFolder" />
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="ManufacturerFolder_64Bit" Name="ThioJoe">
+                <Directory Id="INSTALLFOLDER_64Bit" Name="Explorer Dialog Path Selector" />
+            </Directory>
+        </StandardDirectory>
+
+        <CustomAction Id="LaunchApplication" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixShellExec" Impersonate="yes" />
+
+        <util:CloseApplication Id="CloseMyApp" Target="ExplorerDialogPathSelector.exe" CloseMessage="no" RebootPrompt="no" TerminateProcess="1" />
+
+    </Fragment>
+
+</Wix>
